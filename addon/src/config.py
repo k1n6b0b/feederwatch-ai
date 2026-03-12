@@ -11,6 +11,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
+from urllib.parse import urlparse
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -54,8 +55,15 @@ def load_config() -> Config:
             import yaml  # only needed for dev
             data = yaml.safe_load(f)
 
+    frigate_url = data["frigate_url"].rstrip("/")
+    parsed = urlparse(frigate_url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(
+            f"frigate_url must use http or https scheme, got: {parsed.scheme!r}"
+        )
+
     cfg = Config(
-        frigate_url=data["frigate_url"].rstrip("/"),
+        frigate_url=frigate_url,
         mqtt_host=data["mqtt_host"],
         mqtt_port=int(data.get("mqtt_port", 1883)),
         mqtt_username=data.get("mqtt_username") or None,

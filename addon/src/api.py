@@ -11,9 +11,12 @@ import asyncio
 import json
 import logging
 import os
+import re
+import tempfile
 from collections.abc import AsyncGenerator
 from datetime import date, datetime, timezone
 from typing import Any
+from urllib.parse import quote, urlparse
 
 import aiohttp
 from aiohttp import web
@@ -69,8 +72,8 @@ RATE_LIMIT_MAX = 200
 
 @web.middleware
 async def rate_limit_middleware(request: web.Request, handler: Any) -> web.Response:
-    # Use X-Ingress-Path as session key; fall back to remote IP
-    key = request.headers.get("X-Ingress-Path") or request.remote or "default"
+    # Use remote IP as the rate-limit key — X-Ingress-Path is user-forgeable
+    key = request.remote or "default"
     now = asyncio.get_event_loop().time()
 
     window = _rate_limit_counters.setdefault(key, [])
@@ -321,16 +324,18 @@ async def handle_snapshot(request: web.Request) -> web.Response:
     if detection is None:
         raise web.HTTPNotFound(reason="Detection not found")
 
-    # Try local snapshot first
+    # Try local snapshot first — validate path is within snapshots directory
     local_path = detection.get("snapshot_path")
-    if local_path and os.path.exists(local_path):
-        with open(local_path, "rb") as f:
-            return web.Response(body=f.read(), content_type="image/jpeg")
+    if local_path:
+        snapshots_dir = os.path.realpath("/data/snapshots")
+        real_path = os.path.realpath(local_path)
+        if real_path.startswith(snapshots_dir + os.sep) and os.path.exists(real_path):
+            with open(real_path, "rb") as f:
+                return web.Response(body=f.read(), content_type="image/jpeg")
 
-    # Fall back to Frigate
-    frigate_url = (
-        f"{config.frigate_url}/api/events/{detection['frigate_event_id']}/snapshot.jpg"
-    )
+    # Fall back to Frigate — URL-encode event ID to prevent path injection
+    event_id = quote(str(detection["frigate_event_id"]), safe="")
+    frigate_url = f"{config.frigate_url}/api/events/{event_id}/snapshot.jpg"
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(frigate_url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
@@ -350,7 +355,14 @@ async def handle_export_csv(request: web.Request) -> web.Response:
 
     db_path: str = request.app["db_path"]
     date_param = request.rel_url.query.get("date")
-    target_date = date.fromisoformat(date_param) if date_param else None
+    if date_param:
+        # Validate before use in filename — rejects path separators and injection
+        try:
+            target_date: date | None = date.fromisoformat(date_param)
+        except ValueError:
+            raise web.HTTPBadRequest(reason=f"Invalid date format, expected YYYY-MM-DD: {date_param}")
+    else:
+        target_date = None
 
     if target_date:
         rows = await get_daily_detections(db_path, target_date, limit=100, offset=0)
@@ -405,13 +417,21 @@ async def handle_import_wamf(request: web.Request) -> web.Response:
     if field is None or field.name != "file":
         raise web.HTTPBadRequest(reason="Expected multipart field named 'file'")
 
-    tmp_path = "/tmp/speciesid_import.db"
+    MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB — speciesid.db is typically < 10 MB
+
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".db", prefix="wamf_import_")
     try:
-        with open(tmp_path, "wb") as f:
+        bytes_written = 0
+        with os.fdopen(tmp_fd, "wb") as f:
             while True:
                 chunk = await field.read_chunk()
                 if not chunk:
                     break
+                bytes_written += len(chunk)
+                if bytes_written > MAX_UPLOAD_BYTES:
+                    raise web.HTTPRequestEntityTooLarge(
+                        reason=f"Upload exceeds {MAX_UPLOAD_BYTES // 1024 // 1024} MB limit"
+                    )
                 f.write(chunk)
 
         db_path: str = request.app["db_path"]

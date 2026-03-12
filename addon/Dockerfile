@@ -43,6 +43,13 @@ COPY --from=frontend-builder /build/frontend/dist ./frontend/dist
 # Persistent data directory (mounted by HA Supervisor)
 RUN mkdir -p /data/snapshots
 
+# Non-root user — UID 1000 matches the HA Supervisor 'abc' user convention.
+# The Supervisor mounts /data/ with write permissions for this UID.
+RUN groupadd -r feederwatch --gid=1000 \
+    && useradd -r -g feederwatch --uid=1000 --no-log-init feederwatch \
+    && chown -R feederwatch:feederwatch /app
+USER feederwatch
+
 ENV FEEDERWATCH_DB=/data/feederwatch.db \
     FEEDERWATCH_STATIC=/app/frontend/dist \
     FEEDERWATCH_LABELS=/data/labels.txt \

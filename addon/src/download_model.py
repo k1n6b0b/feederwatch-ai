@@ -16,6 +16,7 @@ import csv
 import io
 import logging
 import os
+import ssl
 import sys
 import urllib.error
 import urllib.request
@@ -51,8 +52,9 @@ TIMEOUT = 120  # seconds
 def _fetch_bytes(url: str) -> bytes:
     _LOGGER.info("Downloading %s", url)
     req = urllib.request.Request(url, headers={"User-Agent": "feederwatch-ai/1.0"})
+    ctx = ssl.create_default_context()  # Explicit TLS cert verification
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUT, context=ctx) as resp:
             return resp.read()
     except urllib.error.URLError as exc:
         raise RuntimeError(f"Network error fetching {url}: {exc.reason}") from exc
