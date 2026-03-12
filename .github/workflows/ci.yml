@@ -1,0 +1,139 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Repo-level minimal permissions — jobs grant only what they need
+permissions:
+  contents: read
+
+jobs:
+  # ── 1. Secret / credential scan ─────────────────────────────────────────
+  secrets-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 0    # full history — gitleaks scans all commits
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── 2. Python dependency CVE scan + SAST ────────────────────────────────
+  python-security:
+    name: Python security (trivy + bandit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - name: Scan Python dependencies with Trivy
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2  # 0.28.0
+        with:
+          scan-type: fs
+          scan-ref: addon/requirements.txt
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: "3.12"
+      - name: Install bandit
+        run: pip install bandit
+      - name: SAST — bandit (medium severity+, skip assert-noise)
+        run: bandit -r addon/src/ -ll --skip B101
+
+  # ── 3. Frontend dependency audit ────────────────────────────────────────
+  frontend-security:
+    name: Frontend security (npm audit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: addon/frontend
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: addon/frontend/package-lock.json
+      - run: npm ci
+      - run: npm audit --audit-level=high
+
+  # ── 4. Lint + type-check ────────────────────────────────────────────────
+  lint:
+    name: Lint & type-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: addon/frontend/package-lock.json
+      - name: Install ruff
+        run: pip install ruff
+      - name: Lint Python
+        run: ruff check addon/src/ tests/addon/
+      - name: Install frontend deps
+        run: cd addon/frontend && npm ci
+      - name: TypeScript type-check
+        run: cd addon/frontend && npx tsc --noEmit
+
+  # ── 5. Tests ────────────────────────────────────────────────────────────
+  test:
+    name: Tests (pytest + vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: addon/frontend/package-lock.json
+      - name: Install Python deps
+        run: pip install -r addon/requirements.txt -r requirements-test.txt
+      - name: Run Python tests
+        run: pytest --tb=short
+      - name: Install frontend deps
+        run: cd addon/frontend && npm ci
+      - name: Symlink node_modules for test resolution
+        run: ln -sfn ../../addon/frontend/node_modules tests/frontend/node_modules
+      - name: Run frontend tests
+        run: cd addon/frontend && npm test -- --run
+
+  # ── 6. Docker build + image scan ────────────────────────────────────────
+  docker:
+    name: Docker build + Trivy scan
+    runs-on: ubuntu-latest
+    needs: [test, python-security, frontend-security]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
+      - name: Build image (amd64, no push)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6
+        with:
+          context: ./addon
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: feederwatch-ai:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2  # 0.28.0
+        with:
+          image-ref: feederwatch-ai:ci
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true

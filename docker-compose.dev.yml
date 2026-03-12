@@ -1,0 +1,77 @@
+# Development environment for FeederWatch AI.
+# Starts the Python backend and Vite dev server side-by-side.
+# Requires: a real or mock MQTT broker + Frigate instance (see below).
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml up
+#
+# Frontend hot-reload: http://localhost:5173
+# Backend API:         http://localhost:8099
+
+services:
+
+  # --------------------------------------------------------------------------
+  # Python add-on backend
+  # --------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./addon
+      dockerfile: Dockerfile
+      target: runtime          # skip the Node build stage in dev
+    image: feederwatch-ai-backend:dev
+    container_name: feederwatch-dev-backend
+    restart: unless-stopped
+    ports:
+      - "8099:8099"
+    volumes:
+      # Mount source for live-reload via watchfiles (if installed)
+      - ./addon/src:/app/src:ro
+      # Persist database and snapshots across restarts
+      - feederwatch-data:/data
+      # Mount dev config (copy from config.example.json and edit)
+      - ./addon/dev-config.json:/data/options.json:ro
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8099/api/v1/status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # --------------------------------------------------------------------------
+  # Vite dev server (React frontend with HMR)
+  # --------------------------------------------------------------------------
+  frontend:
+    image: node:20-slim
+    container_name: feederwatch-dev-frontend
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./addon/frontend:/app:cached
+      - frontend-node-modules:/app/node_modules
+    environment:
+      - NODE_ENV=development
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  # --------------------------------------------------------------------------
+  # Optional: Mosquitto MQTT broker for local dev without a real broker
+  # Remove this service if you have an existing MQTT broker.
+  # --------------------------------------------------------------------------
+  mqtt:
+    image: eclipse-mosquitto:2
+    container_name: feederwatch-dev-mqtt
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./dev/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+
+volumes:
+  feederwatch-data:
+  frontend-node-modules:

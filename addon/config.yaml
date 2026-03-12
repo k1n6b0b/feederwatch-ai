@@ -1,0 +1,53 @@
+# FeederWatch AI — HA Add-on manifest
+# HA Supervisor renders this options schema as a GUI form — no file editing needed.
+
+name: FeederWatch AI
+version: "0.1.0"
+slug: feederwatch_ai
+description: AI-powered bird species identification at your feeder via Frigate NVR
+url: https://github.com/k1n6b0b/feederwatch-ai
+arch:
+  - amd64
+  - aarch64
+init: false
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:bird
+panel_title: FeederWatch AI
+
+map:
+  - data:rw
+
+options:
+  frigate_url: "http://frigate:5000"
+  mqtt_host: "homeassistant.local"
+  mqtt_port: 1883
+  mqtt_username: ""
+  mqtt_password: ""
+  mqtt_use_tls: false
+  camera_names:
+    - "birdcam"
+  classification_threshold: 0.7
+  model_path: "/data/model.tflite"
+  store_snapshots: true
+  max_snapshot_storage_mb: 500
+  bird_present_timeout_minutes: 5
+  frigate_topic: "frigate"
+
+schema:
+  frigate_url: str
+  mqtt_host: str
+  mqtt_port: int(1,65535)
+  mqtt_username: str?
+  mqtt_password: password?
+  mqtt_use_tls: bool
+  camera_names:
+    - str
+  classification_threshold: float(0.1,1.0)
+  model_path: str
+  store_snapshots: bool
+  max_snapshot_storage_mb: int(0,10000)
+  bird_present_timeout_minutes: int(1,60)
+  frigate_topic: str
+
+watchdog: http://[HOST]:[PORT:8099]/api/v1/status

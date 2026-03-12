@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node / Frontend
+addon/frontend/node_modules/
+addon/frontend/dist/
+addon/frontend/.vite/
+*.tsbuildinfo
+
+# Add-on persistent data — never commit
+addon/data/
+/data/
+
+# Secrets / local config
+*.env
+.env.*
+config.yml
+options.json
+
+# Model + database files (downloaded/generated at runtime — never commit)
+*.tflite
+*.db
+
+# Internal planning documents
+High level process.rtf
+UI mockup v1.rtf
+github-issue-57-draft.md
+plan v1.rtf
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp

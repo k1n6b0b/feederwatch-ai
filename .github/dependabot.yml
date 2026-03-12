@@ -1,0 +1,42 @@
+version: 2
+updates:
+  # Python dependencies (add-on runtime)
+  - package-ecosystem: pip
+    directory: /addon
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      python-deps:
+        patterns: ["*"]
+
+  # Node.js dependencies (frontend)
+  - package-ecosystem: npm
+    directory: /addon/frontend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      npm-deps:
+        patterns: ["*"]
+
+  # GitHub Actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Docker base images
+  - package-ecosystem: docker
+    directory: /addon
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3

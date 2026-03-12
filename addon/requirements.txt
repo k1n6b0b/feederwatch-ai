@@ -1,0 +1,13 @@
+# FeederWatch AI Add-on — Python dependencies
+# Pinned for reproducibility. Audited with trivy before each release.
+
+aiohttp==3.13.3      # bumped from 3.9.5: fixes HIGH CVE-2025-69223 (zip bomb) + request smuggling
+aiomqtt==2.1.0
+aiosqlite==0.20.0
+pydantic==2.7.1
+numpy==1.26.4
+Pillow==12.1.1       # bumped from 10.3.0: fixes HIGH CVE-2026-25990 (OOB write via PSD)
+PyYAML==6.0.1
+
+# ML inference — ai-edge-litert (Python 3.12 compatible tflite replacement)
+ai-edge-litert==2.1.2

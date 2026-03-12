@@ -1,0 +1,37 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to FeederWatch AI",
+        "description": "Enter the URL of your FeederWatch AI add-on.",
+        "data": {
+          "addon_url": "Add-on URL"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure FeederWatch AI",
+        "data": {
+          "addon_url": "Add-on URL"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "[%key:component::feederwatch_ai::config::error::cannot_connect%]",
+      "unknown": "[%key:component::feederwatch_ai::config::error::unknown%]"
+    },
+    "abort": {
+      "already_configured": "[%key:component::feederwatch_ai::config::abort::already_configured%]"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "FeederWatch AI Options",
+        "data": {
+          "notify_service": "Notify service",
+          "notify_new_species_only": "New species only"
+        }
+      }
+    }
+  }
+}

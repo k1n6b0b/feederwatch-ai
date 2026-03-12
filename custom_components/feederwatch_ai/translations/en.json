@@ -1,0 +1,45 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to FeederWatch AI",
+        "description": "Enter the URL of your FeederWatch AI add-on. If running on this Home Assistant instance, the default is correct.",
+        "data": {
+          "addon_url": "Add-on URL"
+        },
+        "data_description": {
+          "addon_url": "e.g. http://homeassistant.local:8099"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure FeederWatch AI",
+        "data": {
+          "addon_url": "Add-on URL"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to the FeederWatch AI add-on. Make sure it is running and the URL is correct.",
+      "unknown": "Unexpected error. Check the logs."
+    },
+    "abort": {
+      "already_configured": "This FeederWatch AI add-on is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "FeederWatch AI Options",
+        "description": "Configure optional push notifications.",
+        "data": {
+          "notify_service": "Notify service",
+          "notify_new_species_only": "New species only"
+        },
+        "data_description": {
+          "notify_service": "HA notify service to use for push notifications (e.g. notify.mobile_app_my_phone). Leave blank to disable.",
+          "notify_new_species_only": "Only send push notifications when a new species is seen for the first time."
+        }
+      }
+    }
+  }
+}

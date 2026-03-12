@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-surface-base text-slate-200;
+  }
+
+  /* Custom scrollbar — dark theme */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-surface-base; }
+  ::-webkit-scrollbar-thumb { @apply bg-surface-elevated rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-slate-500; }
+}
+
+@layer components {
+  .card {
+    @apply bg-surface-card rounded-xl border border-surface-elevated overflow-hidden;
+  }
+
+  .btn-primary {
+    @apply bg-accent hover:bg-accent-hover text-white font-medium px-4 py-2 rounded-lg
+           transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-surface-base;
+  }
+
+  .btn-ghost {
+    @apply text-slate-400 hover:text-slate-200 hover:bg-surface-card px-3 py-1.5 rounded-lg
+           transition-colors duration-150 text-sm;
+  }
+
+  .nav-link {
+    @apply text-slate-400 hover:text-slate-200 px-4 py-2 rounded-lg text-sm font-medium
+           transition-colors duration-150;
+  }
+
+  .nav-link-active {
+    @apply text-slate-200 bg-surface-card;
+  }
+
+  .input {
+    @apply bg-surface-elevated border border-surface-elevated text-slate-200 rounded-lg px-3 py-2 text-sm
+           focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent
+           placeholder-slate-500 w-full;
+  }
+
+  .badge {
+    @apply text-xs font-semibold px-2 py-0.5 rounded-full;
+  }
+
+  .badge-new {
+    @apply bg-accent-muted text-accent border border-accent/30;
+  }
+
+  .badge-frigate {
+    @apply bg-blue-900/50 text-blue-400 border border-blue-800;
+  }
+}
+
+/* Confidence bar animation */
+@keyframes slide-in {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+/* Detection card entrance */
+@keyframes fade-in-down {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in-down {
+  animation: fade-in-down 0.25s ease-out forwards;
+}
