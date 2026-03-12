@@ -1,0 +1,140 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Minimal permissions — each job grants only what it needs
+permissions:
+  contents: read
+
+jobs:
+  # ── 1. Secret / credential scan ─────────────────────────────────────────
+  secrets-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # full history — gitleaks scans all commits
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── 2. Python dependency audit + SAST ───────────────────────────────────
+  python-security:
+    name: Python security (trivy + bandit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan Python dependencies with Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: addon/requirements.txt
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install bandit
+        run: pip install bandit
+      - name: SAST — bandit
+        # -ll = medium severity and above; -s B101 skips assert-in-tests noise
+        run: bandit -r addon/src/ -ll --skip B101
+
+  # ── 3. Frontend dependency audit ────────────────────────────────────────
+  frontend-security:
+    name: Frontend security (npm audit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: addon/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: addon/frontend/package-lock.json
+      - run: npm ci
+      - run: npm audit --audit-level=high
+
+  # ── 4. Lint + type-check ────────────────────────────────────────────────
+  lint:
+    name: Lint & type-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: addon/frontend/package-lock.json
+      - name: Install ruff
+        run: pip install ruff
+      - name: Lint Python
+        run: ruff check addon/src/ tests/addon/
+      - name: Install frontend deps
+        run: cd addon/frontend && npm ci
+      - name: TypeScript type-check
+        run: cd addon/frontend && npx tsc --noEmit
+
+  # ── 5. Tests ────────────────────────────────────────────────────────────
+  test:
+    name: Tests (pytest + vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: addon/frontend/package-lock.json
+      - name: Install Python deps
+        run: pip install -r addon/requirements.txt -r requirements-test.txt
+      - name: Run Python tests
+        run: pytest --tb=short
+      - name: Install frontend deps
+        run: cd addon/frontend && npm ci
+      - name: Create test symlink
+        run: ln -sfn ../../addon/frontend/node_modules tests/frontend/node_modules
+      - name: Run frontend tests
+        run: cd addon/frontend && npm test -- --run
+
+  # ── 6. Docker build + image scan ────────────────────────────────────────
+  docker:
+    name: Docker build + Trivy scan
+    runs-on: ubuntu-latest
+    needs: [test, python-security, frontend-security]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image (amd64 only, no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./addon
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: feederwatch-ai:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: feederwatch-ai:ci
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true

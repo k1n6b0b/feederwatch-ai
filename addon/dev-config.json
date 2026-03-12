@@ -1,0 +1,13 @@
+{
+  "frigate_url": "http://host.docker.internal:5000",
+  "mqtt_host": "mqtt",
+  "mqtt_port": 1883,
+  "mqtt_username": null,
+  "mqtt_password": null,
+  "frigate_camera": null,
+  "confidence_threshold": 0.7,
+  "model_path": "/data/model.tflite",
+  "db_path": "/data/feederwatch.db",
+  "snapshot_dir": "/data/snapshots",
+  "log_level": "DEBUG"
+}
