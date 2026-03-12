@@ -358,8 +358,13 @@ class MQTTClient:
 
     async def _save_snapshot(self, frigate_event_id: str, data: bytes) -> str | None:
         import os
+        import re
         snapshots_dir = "/data/snapshots"
         os.makedirs(snapshots_dir, exist_ok=True)
+        # Validate event ID is safe for use as a filename (Frigate uses UUID format)
+        if not re.match(r'^[a-zA-Z0-9_\-]+$', frigate_event_id):
+            _LOGGER.warning("Rejecting snapshot with unsafe event ID: %r", frigate_event_id)
+            return None
         path = f"{snapshots_dir}/{frigate_event_id}.jpg"
         try:
             loop = asyncio.get_event_loop()

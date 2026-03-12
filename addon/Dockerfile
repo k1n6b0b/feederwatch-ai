@@ -36,12 +36,19 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Application source
 COPY src/ ./src/
+COPY run.sh /run.sh
+RUN chmod +x /run.sh
 
 # Frontend build artifacts from stage 1
 COPY --from=frontend-builder /build/frontend/dist ./frontend/dist
 
 # Persistent data directory (mounted by HA Supervisor)
 RUN mkdir -p /data/snapshots
+
+# NOTE: Running as root — standard for HA add-ons using plain base images.
+# The Supervisor owns /data/ as root and doesn't remap permissions for custom UIDs.
+# TODO: Migrate to ghcr.io/hassio-addons/base-python:3.12 which uses the 'abc'
+# user (UID 1000) with correct /data/ permissions via s6-overlay.
 
 ENV FEEDERWATCH_DB=/data/feederwatch.db \
     FEEDERWATCH_STATIC=/app/frontend/dist \
@@ -54,4 +61,4 @@ EXPOSE 8099
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8099/api/v1/status')"
 
-CMD ["python", "-m", "src.main"]
+CMD ["/run.sh"]

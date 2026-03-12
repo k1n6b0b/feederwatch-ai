@@ -7,20 +7,21 @@ on:
 
 permissions:
   contents: read
-  packages: write    # push to GHCR
+  packages: write          # push to GHCR
+  security-events: write   # upload Trivy SARIF to GitHub Security tab
 
 jobs:
   build-and-push:
     name: Build + push multi-arch image
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
-      - uses: docker/setup-qemu-action@v3      # arm64 emulation
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -28,7 +29,7 @@ jobs:
 
       - name: Extract image metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051  # v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/feederwatch-ai
           tags: |
@@ -37,8 +38,7 @@ jobs:
             type=sha
 
       - name: Build and push
-        id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6
         with:
           context: ./addon
           platforms: linux/amd64,linux/arm64
@@ -48,8 +48,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Scan pushed image with Trivy
-        uses: aquasecurity/trivy-action@0.28.0
+      - name: Scan released image with Trivy
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2  # 0.28.0
         with:
           image-ref: ghcr.io/${{ github.repository_owner }}/feederwatch-ai:${{ steps.meta.outputs.version }}
           format: sarif
@@ -58,9 +58,7 @@ jobs:
           ignore-unfixed: true
 
       - name: Upload Trivy SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@820e3160e279568db735cee8ed8f8e77a6da7818  # v3
         if: always()
         with:
           sarif_file: trivy-results.sarif
-        permissions:
-          security-events: write

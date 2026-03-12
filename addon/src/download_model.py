@@ -2,7 +2,7 @@
 Download model.tflite and labels.txt on first startup.
 
 Model: Google AIY Vision Classifier Birds V1 (MobileNetV2, 224x224, 965 classes)
-       Sourced from WhosAtMyFeeder repo (same model, committed directly there)
+       Hosted in k1n6b0b/feederwatch-ai GitHub releases (Apache 2.0)
 Labels: Google AIY Birds V1 labelmap CSV → converted to plain text (one name per line)
 
 Run: python3 /app/src/download_model.py
@@ -13,9 +13,11 @@ Exit 1: one or more files could not be obtained
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import logging
 import os
+import ssl
 import sys
 import urllib.error
 import urllib.request
@@ -32,8 +34,9 @@ _LOGGER = logging.getLogger("download_model")
 # ---------------------------------------------------------------------------
 
 MODEL_URL = (
-    "https://raw.githubusercontent.com/mmcc-xx/WhosAtMyFeeder/master/model.tflite"
+    "https://github.com/k1n6b0b/feederwatch-ai/releases/download/models-v1/model.tflite"
 )
+MODEL_SHA256 = "95f59df4cff9053355abcd0b6e5e7e740f6eae19ed8cded32e2c3e8068195093"
 MODEL_DEST = "/data/model.tflite"
 
 LABELS_CSV_URL = (
@@ -51,8 +54,9 @@ TIMEOUT = 120  # seconds
 def _fetch_bytes(url: str) -> bytes:
     _LOGGER.info("Downloading %s", url)
     req = urllib.request.Request(url, headers={"User-Agent": "feederwatch-ai/1.0"})
+    ctx = ssl.create_default_context()  # Explicit TLS cert verification
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUT, context=ctx) as resp:
             return resp.read()
     except urllib.error.URLError as exc:
         raise RuntimeError(f"Network error fetching {url}: {exc.reason}") from exc
@@ -68,8 +72,18 @@ def _write_atomic(dest: str, data: bytes) -> None:
     _LOGGER.info("Saved %s (%d bytes)", dest, os.path.getsize(dest))
 
 
+def _verify_sha256(data: bytes, expected: str) -> None:
+    actual = hashlib.sha256(data).hexdigest()
+    if actual != expected:
+        raise RuntimeError(
+            f"Checksum mismatch — expected {expected}, got {actual}. "
+            "The downloaded file may be corrupt or tampered with."
+        )
+
+
 def _download_model() -> None:
     data = _fetch_bytes(MODEL_URL)
+    _verify_sha256(data, MODEL_SHA256)
     _write_atomic(MODEL_DEST, data)
 
 

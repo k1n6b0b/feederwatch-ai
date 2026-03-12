@@ -1,0 +1,9 @@
+[allowlist]
+  description = "Known false positives in FeederWatch AI"
+  paths = [
+    # These files contain the literal field name 'mqtt_password' in schema
+    # definitions — not actual credentials.
+    "addon/config.yaml",
+    "addon/dev-config.json",
+    "addon/src/config.py",
+  ]
