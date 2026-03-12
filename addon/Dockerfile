@@ -4,7 +4,7 @@
 # Stage 2: Python 3.12 runtime (no Node, no build tools in final image)
 
 # ── Stage 1: Frontend build ────────────────────────────────────────────────
-FROM node:20-slim AS frontend-builder
+FROM node:25-slim AS frontend-builder
 
 WORKDIR /build/frontend
 
