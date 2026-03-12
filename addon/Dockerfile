@@ -43,12 +43,10 @@ COPY --from=frontend-builder /build/frontend/dist ./frontend/dist
 # Persistent data directory (mounted by HA Supervisor)
 RUN mkdir -p /data/snapshots
 
-# Non-root user — UID 1000 matches the HA Supervisor 'abc' user convention.
-# The Supervisor mounts /data/ with write permissions for this UID.
-RUN groupadd -r feederwatch --gid=1000 \
-    && useradd -r -g feederwatch --uid=1000 --no-log-init feederwatch \
-    && chown -R feederwatch:feederwatch /app
-USER feederwatch
+# NOTE: Running as root — standard for HA add-ons using plain base images.
+# The Supervisor owns /data/ as root and doesn't remap permissions for custom UIDs.
+# TODO: Migrate to ghcr.io/hassio-addons/base-python:3.12 which uses the 'abc'
+# user (UID 1000) with correct /data/ permissions via s6-overlay.
 
 ENV FEEDERWATCH_DB=/data/feederwatch.db \
     FEEDERWATCH_STATIC=/app/frontend/dist \
