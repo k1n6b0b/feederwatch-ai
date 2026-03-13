@@ -76,9 +76,11 @@ class FeederWatchCoordinator(DataUpdateCoordinator[FeederWatchData]):
         # per species tells us if they're currently active.  We consider
         # a species "present" if its most-recent detection was within the
         # last 5 minutes (mirrors the add-on's 5-minute safety timeout).
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        now = datetime.now(timezone.utc)
+        # Add-on stores detected_at in local time (naive, no tz suffix) —
+        # compare against datetime.now() (also local, naive) to avoid tz mismatch.
+        now = datetime.now()
         present: set[str] = set()
         seen: set[str] = set()
         last: dict[str, Any] | None = recent[0] if recent else None
@@ -88,7 +90,7 @@ class FeederWatchCoordinator(DataUpdateCoordinator[FeederWatchData]):
             if name and name not in seen:
                 seen.add(name)
                 try:
-                    detected_at = datetime.fromisoformat(det["detected_at"].replace("Z", "+00:00"))
+                    detected_at = datetime.fromisoformat(det["detected_at"])
                     if (now - detected_at).total_seconds() < 300:
                         present.add(name)
                 except (KeyError, ValueError):

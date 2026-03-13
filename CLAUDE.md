@@ -140,7 +140,7 @@ See `project_versioning.md` memory for the full checklist.
 
 - [x] Phase 1 — Add-on backend (complete)
 - [x] Phase 2 — React + TypeScript frontend (complete)
-- [ ] Phase 3 — HACS Integration (`custom_components/feederwatch_ai/`)
+- [ ] Phase 3 — HACS Integration (`custom_components/feederwatch_ai/`) — skeleton written, not yet tested on HA
 - [ ] Phase 4 — Polish + distribution
 
 ## Known pre-existing issues

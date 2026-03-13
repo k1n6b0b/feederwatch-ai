@@ -1,12 +1,12 @@
 {
   "domain": "feederwatch_ai",
   "name": "FeederWatch AI",
-  "codeowners": ["@mmcc-xx"],
+  "codeowners": ["@k1n6b0b"],
   "config_flow": true,
   "dependencies": ["http"],
-  "documentation": "https://github.com/mmcc-xx/feederwatch-ai",
+  "documentation": "https://github.com/k1n6b0b/feederwatch-ai",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/mmcc-xx/feederwatch-ai/issues",
+  "issue_tracker": "https://github.com/k1n6b0b/feederwatch-ai/issues",
   "requirements": [],
   "version": "0.1.0"
 }
