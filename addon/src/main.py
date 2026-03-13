@@ -31,7 +31,7 @@ _LOGGER = logging.getLogger(__name__)
 
 DB_PATH = os.environ.get("FEEDERWATCH_DB", "/data/feederwatch.db")
 STATIC_PATH = os.environ.get("FEEDERWATCH_STATIC", "/app/frontend/dist")
-HOST = os.environ.get("FEEDERWATCH_HOST", "0.0.0.0")
+HOST = os.environ.get("FEEDERWATCH_HOST", "0.0.0.0")  # nosec B104 — intentional: HA add-on runs in Docker, must bind all interfaces
 PORT = int(os.environ.get("FEEDERWATCH_PORT", "8099"))
 LABELS_PATH = os.environ.get("FEEDERWATCH_LABELS", "/data/labels.txt")
 MQTT_HEARTBEAT_INTERVAL = 60

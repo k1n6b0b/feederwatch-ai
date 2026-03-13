@@ -56,7 +56,7 @@ def _fetch_bytes(url: str) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": "feederwatch-ai/1.0"})
     ctx = ssl.create_default_context()  # Explicit TLS cert verification
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT, context=ctx) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUT, context=ctx) as resp:  # nosec B310 — HTTPS-only, TLS verified above
             return resp.read()
     except urllib.error.URLError as exc:
         raise RuntimeError(f"Network error fetching {url}: {exc.reason}") from exc
