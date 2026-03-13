@@ -66,29 +66,44 @@ npx tsc --noEmit       # type-check only
 ```
 
 ### Deploy to HA (Mountain Duck must be mounted)
+
+**Slug:** `local_feederwatch_ai`
+
 ```bash
 # 1. Build frontend first (if changed)
 cd addon/frontend && npm run build && cd ../..
 
-# 2. Rsync to HA (Mountain Duck mount path is machine-local — see deploy workflow memory)
+# 2. Rsync source + dist to HA (see deploy workflow memory for exact mount path)
 rsync -av --exclude='__pycache__' --exclude='*.pyc' --exclude='node_modules' --exclude='dist' \
-  addon/ \
-  "<mountain-duck-mount>/addons/feederwatch_ai/"
+  addon/ "<mountain-duck-mount>/addons/feederwatch_ai/"
+rsync -av addon/frontend/dist/ "<mountain-duck-mount>/addons/feederwatch_ai/frontend/dist/"
 
-# 3. Build image with no-cache using the add-on's image tag (see deploy workflow memory)
-#    NOTE: ha apps rebuild fetches from GitHub — does NOT use local /addons/ files
-ssh hass "docker build --no-cache -t <addon-image-tag> /addons/feederwatch_ai/ 2>&1 | tail -3"
+# 3a. Code-only changes — rebuild is enough:
+ssh hass "ha apps rebuild local_feederwatch_ai"
 
-# 4. Restart (uses the freshly built image above)
-ssh hass "ha apps restart <addon-slug>"
+# 3b. config.yaml schema or version changed — full cycle required:
+ssh hass "ha apps stop local_feederwatch_ai && ha apps uninstall local_feederwatch_ai"
+ssh hass "ha apps install local_feederwatch_ai && ha store reload"
+ssh hass "ha apps update local_feederwatch_ai"
+# Then re-enter config options in HA UI and start the add-on
 
 # Tail logs
-ssh hass "ha apps logs <addon-slug> 2>&1 | tail -30"
+ssh hass "ha apps logs local_feederwatch_ai 2>&1 | tail -30"
 ```
 
+### Version bump — ALL four files must be updated together
+Every version change (alpha bump, patch, minor) must update all four in the same commit:
+1. `addon/config.yaml` — `version:` field
+2. `addon/src/api.py` — `"version":` in status endpoint
+3. `addon/CHANGELOG.md` — top-level `## X.Y.Z` heading (HA reads this as update dialog title)
+4. `addon/run.sh` — `echo "[INFO] Starting FeederWatch AI vX.Y.Z"`
+
+Bump the alpha suffix (`alpha.1` → `alpha.2`) before every rsync deploy to HA so logs
+unambiguously identify which build is running.
+
 ### Release
-Before tagging: run all five checks above, deploy + smoke-test, update `version:` in
-`addon/config.yaml`, then:
+Before tagging: run all five checks above, deploy + smoke-test, confirm all four version
+files above are in sync, then:
 ```bash
 git tag vX.Y.Z && git push origin main --tags
 ```
@@ -115,7 +130,7 @@ See `project_versioning.md` memory for the full checklist.
 - **No config in the web UI** — HA Add-on config tab handles it via `config.yaml` schema.
 - **SSE for live feed** (`/api/v1/detections/stream`), TanStack Query for everything else.
 - **Snapshot = local `/data/snapshots/`** (permanent). Video = Frigate link only (no local copy).
-- **Frigate event URL**: `{frigate_url}/events/{event_id}` (not `/review`).
+- **Frigate event URL**: `{frigate_ui_url}/review?id={event_id}` (Frigate 0.14+ format). `frigate_url` = internal Docker URL for Python API calls; `frigate_ui_url` = optional browser-accessible URL for "View in Frigate" links (defaults to `frigate_url` if blank).
 - **AllAboutBirds URL**: spaces→underscores, apostrophes→removed.
 - **ConnectionStatus page** accessible only via StatusChip click — not in nav.
 - **Detection category_name**: `ai_classified` | `frigate_classified` | `human_reclassified`.

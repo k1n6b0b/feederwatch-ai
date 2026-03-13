@@ -2,7 +2,7 @@
 # HA Supervisor renders this options schema as a GUI form — no file editing needed.
 
 name: FeederWatch AI
-version: "0.1.2-alpha.1"
+version: "0.1.2"
 slug: feederwatch_ai
 description: AI-powered bird species identification at your feeder via Frigate NVR
 url: https://github.com/k1n6b0b/feederwatch-ai
@@ -19,23 +19,45 @@ map:
   - data:rw
 
 options:
-  frigate_url: "http://frigate:5000"
+  # --- Frigate NVR ---
+  # Internal URL used by this add-on to call Frigate's REST API (snapshot/clip fetching).
+  # Use the Docker service name or internal IP — the add-on container resolves this directly.
+  # Example: http://frigate:5000  or  http://192.168.1.10:5000
+  frigate_api_url: "http://frigate:5000"
+
+  # Browser-accessible URL for "View in Frigate" clip links shown in the detection modal.
+  # Leave blank to use frigate_api_url. Set this if Frigate is behind a reverse proxy or
+  # uses a different hostname/port than the Docker-internal address.
+  # Example: https://frigate.yourdomain.com  or  http://192.168.1.10:8971
+  frigate_clips_ui_url: ""
+
+  # MQTT topic prefix Frigate publishes events to (rarely needs changing).
+  frigate_topic: "frigate"
+
+  # --- MQTT broker ---
   mqtt_host: "homeassistant.local"
   mqtt_port: 1883
   mqtt_username: ""
   mqtt_password: ""
   mqtt_use_tls: false
+
+  # --- Detection ---
+  # Camera names to watch (must match Frigate camera names, case-insensitive).
   camera_names:
     - "birdcam"
+  # Minimum classifier confidence to save a detection (0.1–1.0).
   classification_threshold: 0.7
-  model_path: "/data/model.tflite"
+  # How long after last detection to keep "bird present" state active (minutes).
+  bird_present_timeout_minutes: 5
+
+  # --- Storage ---
   store_snapshots: true
   max_snapshot_storage_mb: 500
-  bird_present_timeout_minutes: 5
-  frigate_topic: "frigate"
 
 schema:
-  frigate_url: str
+  frigate_api_url: str
+  frigate_clips_ui_url: str?
+  frigate_topic: str
   mqtt_host: str
   mqtt_port: int(1,65535)
   mqtt_username: str?
@@ -44,10 +66,8 @@ schema:
   camera_names:
     - str
   classification_threshold: float(0.1,1.0)
-  model_path: str
+  bird_present_timeout_minutes: int(1,60)
   store_snapshots: bool
   max_snapshot_storage_mb: int(0,10000)
-  bird_present_timeout_minutes: int(1,60)
-  frigate_topic: str
 
 watchdog: http://[HOST]:[PORT:8099]/api/v1/status

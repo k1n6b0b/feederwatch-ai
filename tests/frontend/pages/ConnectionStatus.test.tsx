@@ -27,7 +27,7 @@ import { status as statusApi, events as eventsApi } from '../../../addon/fronten
 function makeStatus(overrides: Partial<StatusResponse> = {}): StatusResponse {
   return {
     mqtt: { connected: true, host: 'mqtt.local', port: 1883, authenticated: true },
-    frigate: { reachable: true, url: 'http://frigate.local:5000' },
+    frigate: { reachable: true, api_url: 'http://frigate.local:5000', clips_ui_url: 'http://frigate.local:5000' },
     model: { loaded: true, labels_loaded: true, path: '/data/model.tflite', input_size: 224 },
     database: { ok: true, detections: 1234, size_bytes: 2 * 1024 * 1024 },
     uptime_seconds: 7380,
@@ -206,7 +206,7 @@ describe('ConnectionStatus page', () => {
   it('does not render chip label text in the status card', async () => {
     vi.mocked(statusApi.get).mockResolvedValue(makeStatus({
       mqtt: { connected: false, host: 'mqtt.local', port: 1883, authenticated: false },
-      frigate: { reachable: false, url: 'http://frigate.local:5000' },
+      frigate: { reachable: false, api_url: 'http://frigate.local:5000', clips_ui_url: 'http://frigate.local:5000' },
     }))
     vi.mocked(eventsApi.recent).mockResolvedValue([])
     wrapper(<ConnectionStatus />)
@@ -255,7 +255,7 @@ describe('ConnectionStatus page', () => {
 
   it('shows Frigate discovery hint when Frigate unreachable and Supervisor found it', async () => {
     vi.mocked(statusApi.get).mockResolvedValue(makeStatus({
-      frigate: { reachable: false, url: 'http://wrong:5000' },
+      frigate: { reachable: false, api_url: 'http://wrong:5000', clips_ui_url: 'http://wrong:5000' },
       discovery: {
         mqtt: null,
         frigate_url: 'http://ccab4aaf-frigate:5000',

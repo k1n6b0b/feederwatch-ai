@@ -3,7 +3,7 @@
 
 set -e
 
-echo "[INFO] Starting FeederWatch AI v0.1.0"
+echo "[INFO] Starting FeederWatch AI v0.1.2"
 
 # Download model on first startup if missing
 if [ ! -f /data/model.tflite ]; then

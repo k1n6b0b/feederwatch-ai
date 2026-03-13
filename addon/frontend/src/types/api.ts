@@ -97,7 +97,8 @@ export interface StatusResponse {
   }
   frigate: {
     reachable: boolean
-    url: string
+    api_url: string
+    clips_ui_url: string
   }
   model: {
     loaded: boolean

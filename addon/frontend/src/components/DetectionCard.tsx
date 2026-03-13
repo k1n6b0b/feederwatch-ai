@@ -32,6 +32,7 @@ function RelativeTime({ isoString }: { isoString: string }) {
 }
 
 export default function DetectionCard({ detection, isNew = false, onRemove }: DetectionCardProps) {
+  const [imgFailed, setImgFailed] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -77,16 +78,19 @@ export default function DetectionCard({ detection, isNew = false, onRemove }: De
           aria-label={`${detection.common_name} detection — click for details`}
         >
           <div className="aspect-video bg-surface-elevated overflow-hidden relative">
-            <img
-              src={snapshotUrl}
-              alt={detection.common_name}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-              loading="lazy"
-              onError={(e) => {
-                (e.target as HTMLImageElement).src =
-                  'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60"%3E%3Crect width="100" height="60" fill="%231e293b"/%3E%3Ctext x="50" y="35" text-anchor="middle" fill="%2364748b" font-size="10"%3ENo image%3C/text%3E%3C/svg%3E'
-              }}
-            />
+            {imgFailed ? (
+              <div className="w-full h-full flex items-center justify-center text-slate-600">
+                <span className="text-3xl">🪶</span>
+              </div>
+            ) : (
+              <img
+                src={snapshotUrl}
+                alt={detection.common_name}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                loading="lazy"
+                onError={() => setImgFailed(true)}
+              />
+            )}
             {/* Camera badge */}
             <span className="absolute bottom-2 left-2 text-xs bg-black/60 text-slate-300 px-1.5 py-0.5 rounded">
               {detection.camera_name}
@@ -156,7 +160,7 @@ export default function DetectionCard({ detection, isNew = false, onRemove }: De
       {modalOpen && (
         <DetectionModal
           detection={detection}
-          frigateBaseUrl={statusData?.frigate.url ?? ''}
+          frigateBaseUrl={statusData?.frigate.clips_ui_url ?? ''}
           onClose={() => setModalOpen(false)}
           onRemove={onRemove}
         />

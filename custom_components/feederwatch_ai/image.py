@@ -70,7 +70,11 @@ class LastBirdImage(CoordinatorEntity[FeederWatchCoordinator], ImageEntity):
             return None
         try:
             ts = self.coordinator.data.last_detection.get("detected_at", "")
-            return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            # Add-on stores local naive time — attach local tz so HA is satisfied
+            if dt.tzinfo is None:
+                dt = dt.astimezone()
+            return dt
         except (ValueError, AttributeError):
             return None
 

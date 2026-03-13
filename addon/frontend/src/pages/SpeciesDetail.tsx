@@ -23,6 +23,46 @@ export default function SpeciesDetail() {
   return <SpeciesDetailInner scientificName={decodeURIComponent(scientificName)} navigate={navigate} />
 }
 
+export function HeroImage({ detectionId, altText }: { detectionId: number; altText: string }) {
+  const [failed, setFailed] = useState(false)
+  if (failed) return null
+  return (
+    <div className="rounded-xl overflow-hidden bg-surface-elevated aspect-video">
+      <img
+        src={detectionsApi.snapshotUrl(detectionId)}
+        alt={altText}
+        className="w-full h-full object-contain"
+        onError={() => setFailed(true)}
+      />
+    </div>
+  )
+}
+
+export function GridPhoto({ detection, altText, onClick }: { detection: Detection; altText: string; onClick: () => void }) {
+  const [failed, setFailed] = useState(false)
+  return (
+    <button
+      onClick={onClick}
+      className="aspect-square bg-surface-elevated rounded-lg overflow-hidden hover:ring-1 hover:ring-accent/40 transition-all"
+      aria-label={altText}
+    >
+      {failed ? (
+        <div className="w-full h-full flex items-center justify-center text-slate-600">
+          <span className="text-3xl">🪶</span>
+        </div>
+      ) : (
+        <img
+          src={detectionsApi.snapshotUrl(detection.id)}
+          alt={altText}
+          className="w-full h-full object-cover"
+          loading="lazy"
+          onError={() => setFailed(true)}
+        />
+      )}
+    </button>
+  )
+}
+
 function SpeciesDetailInner({
   scientificName,
   navigate,
@@ -100,13 +140,7 @@ function SpeciesDetailInner({
 
       {/* Hero photo */}
       {detail.best_detection_id != null && (
-        <div className="rounded-xl overflow-hidden bg-black aspect-video">
-          <img
-            src={detectionsApi.snapshotUrl(detail.best_detection_id)}
-            alt={detail.common_name}
-            className="w-full h-full object-contain"
-          />
-        </div>
+        <HeroImage detectionId={detail.best_detection_id} altText={detail.common_name} />
       )}
 
       {/* Stats */}
@@ -145,22 +179,12 @@ function SpeciesDetailInner({
           <h2 className="text-sm font-medium text-slate-300">All photos</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
             {allPhotos.map(d => (
-              <button
+              <GridPhoto
                 key={d.id}
+                detection={d}
+                altText={`View ${detail.common_name} detection from ${new Date(d.detected_at).toLocaleDateString()}`}
                 onClick={() => setSelectedDetection(d)}
-                className="aspect-square bg-surface-elevated rounded-lg overflow-hidden hover:ring-1 hover:ring-accent/40 transition-all"
-                aria-label={`View ${detail.common_name} detection from ${new Date(d.detected_at).toLocaleDateString()}`}
-              >
-                <img
-                  src={detectionsApi.snapshotUrl(d.id)}
-                  alt={`${detail.common_name} — ${new Date(d.detected_at).toLocaleDateString()}`}
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none'
-                  }}
-                />
-              </button>
+              />
             ))}
           </div>
           {hasNextPage && (
@@ -180,14 +204,19 @@ function SpeciesDetailInner({
       {selectedDetection && (
         <DetectionModal
           detection={selectedDetection}
-          frigateBaseUrl={statusData?.frigate.url ?? ''}
+          frigateBaseUrl={statusData?.frigate.clips_ui_url ?? ''}
           onClose={() => setSelectedDetection(null)}
           onRemove={(_id) => {
             queryClient.invalidateQueries({ queryKey: ['species-detections', scientificName] })
             queryClient.invalidateQueries({ queryKey: ['species'] })
             setSelectedDetection(null)
-            // Navigate back if this was the last photo
             if (allPhotos.length <= 1) navigate(-1)
+          }}
+          onReclassifySuccess={(speciesDeleted) => {
+            queryClient.invalidateQueries({ queryKey: ['species-detections', scientificName] })
+            queryClient.invalidateQueries({ queryKey: ['species'] })
+            setSelectedDetection(null)
+            if (speciesDeleted || allPhotos.length <= 1) navigate(-1)
           }}
         />
       )}

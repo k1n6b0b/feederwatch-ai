@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../addon"))
 
 from src.db import (
     backfill_common_names,
+    backfill_reversed_sublabels,
     delete_detection,
     detection_exists,
     get_all_species,
@@ -124,6 +125,56 @@ async def test_backfill_common_names_preserves_correct_rows():
     assert names[sci] == "Custom Name"  # unchanged
 
 
+@pytest.mark.asyncio
+async def test_backfill_common_names_fixes_multiple_wrong_rows():
+    """New query-first approach fixes ALL wrong rows in the DB, not just BIRD_NAMES iteration order."""
+    species = [
+        ("Haemorhous mexicanus", "House Finch"),
+        ("Cyanocitta cristata", "Blue Jay"),
+        ("Cardinalis cardinalis", "Northern Cardinal"),
+    ]
+    for sci, _ in species:
+        await upsert_species(DB, sci, sci)  # store wrong: common_name = scientific_name
+
+    count = await backfill_common_names(DB)
+
+    assert count == len(species)
+    names = await get_display_names(DB, [s for s, _ in species])
+    for sci, expected_common in species:
+        assert names[sci] == expected_common, f"{sci}: expected {expected_common!r}, got {names[sci]!r}"
+
+
+@pytest.mark.asyncio
+async def test_backfill_reversed_sublabels_overwrites_wrong_species_row():
+    """Upsert (not INSERT OR IGNORE) corrects an existing species row with wrong common_name."""
+    import aiosqlite
+    # Simulate the pre-B13/B16 state:
+    # AI classifier created a species row with wrong common_name (scientific == common)
+    real_sci = "Haemorhous mexicanus"
+    await upsert_species(DB, real_sci, real_sci)  # wrong: common = scientific
+
+    # A Frigate sub_label detection was stored verbatim with common name as scientific_name
+    wrong_sci = "House Finch"
+    await upsert_species(DB, wrong_sci, wrong_sci)
+    await insert_detection(
+        DB, "evt-reversed-1", wrong_sci, wrong_sci, score=None,
+        category_name="frigate_classified", camera_name="cam",
+    )
+
+    # Run the migration
+    await backfill_reversed_sublabels(DB)
+
+    # The target species row must now have the correct common_name, even though it
+    # already existed with wrong data (INSERT OR IGNORE would have silently skipped it)
+    async with aiosqlite.connect(DB) as db:
+        db.row_factory = aiosqlite.Row
+        row = await db.execute_fetchall(
+            "SELECT common_name FROM species WHERE scientific_name = ?", (real_sci,)
+        )
+    assert len(row) == 1
+    assert row[0]["common_name"] == "House Finch"
+
+
 # ---------------------------------------------------------------------------
 # Detections
 # ---------------------------------------------------------------------------
@@ -214,7 +265,8 @@ async def test_reclassify_detection():
     await upsert_species(DB, "Poecile atricapillus", "Black-capped Chickadee")
     det_id = await insert_detection(DB, "evt_rc", "Poecile atricapillus", "Black-capped Chickadee", 0.72, "ai_classified", "cam")
     updated = await reclassify_detection(DB, det_id, "Cyanocitta cristata", "Blue Jay")
-    assert updated is True
+    assert updated is not None
+    assert updated["reclassified"] is True
     row = await get_detection_by_id(DB, det_id)
     assert row is not None
     assert row["scientific_name"] == "Cyanocitta cristata"
@@ -227,7 +279,81 @@ async def test_reclassify_detection():
 @pytest.mark.asyncio
 async def test_reclassify_detection_nonexistent():
     result = await reclassify_detection(DB, 99999, "Cyanocitta cristata", "Blue Jay")
-    assert result is False
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_reclassify_deletes_orphaned_species():
+    """Reclassifying the only detection away from a species should remove that species row."""
+    await upsert_species(DB, "Poecile atricapillus", "Black-capped Chickadee")
+    await upsert_species(DB, "Cyanocitta cristata", "Blue Jay")
+    det_id = await insert_detection(DB, "evt_orphan", "Poecile atricapillus", "Black-capped Chickadee", 0.9, "ai_classified", "cam")
+    result = await reclassify_detection(DB, det_id, "Cyanocitta cristata", "Blue Jay")
+    assert result is not None
+    assert result["species_deleted"] is True
+    # Old species should be gone
+    detail = await get_species_detail(DB, "Poecile atricapillus")
+    assert detail is None
+
+
+@pytest.mark.asyncio
+async def test_reclassify_keeps_species_with_remaining_detections():
+    """Reclassifying one of two detections must NOT delete the species."""
+    await upsert_species(DB, "Poecile atricapillus", "Black-capped Chickadee")
+    await upsert_species(DB, "Cyanocitta cristata", "Blue Jay")
+    await insert_detection(DB, "evt_keep1", "Poecile atricapillus", "Black-capped Chickadee", 0.9, "ai_classified", "cam")
+    det_id2 = await insert_detection(DB, "evt_keep2", "Poecile atricapillus", "Black-capped Chickadee", 0.8, "ai_classified", "cam")
+    result = await reclassify_detection(DB, det_id2, "Cyanocitta cristata", "Blue Jay")
+    assert result is not None
+    assert result["species_deleted"] is False
+    # Original species still has one detection
+    detail = await get_species_detail(DB, "Poecile atricapillus")
+    assert detail is not None
+
+
+@pytest.mark.asyncio
+async def test_backfill_reversed_sublabels_fixes_common_as_scientific():
+    """Detections where scientific_name is actually a common name get corrected."""
+    # Insert a detection with Frigate sub_label stored verbatim as scientific_name
+    await upsert_species(DB, "House Finch", "House Finch")
+    await insert_detection(DB, "evt_hf", "House Finch", "House Finch", None, "frigate_classified", "cam")
+    count = await backfill_reversed_sublabels(DB)
+    assert count == 1
+    # Detection should now have correct scientific name
+    rows_after = await get_species_detail(DB, "Haemorhous mexicanus")
+    assert rows_after is not None
+    # Old wrong species row should be gone
+    wrong = await get_species_detail(DB, "House Finch")
+    assert wrong is None
+
+
+@pytest.mark.asyncio
+async def test_backfill_reversed_sublabels_idempotent():
+    """Running the migration twice should not double-count or error."""
+    await upsert_species(DB, "House Finch", "House Finch")
+    await insert_detection(DB, "evt_idem", "House Finch", "House Finch", None, "frigate_classified", "cam")
+    await backfill_reversed_sublabels(DB)
+    count2 = await backfill_reversed_sublabels(DB)
+    assert count2 == 0  # nothing left to fix
+
+
+@pytest.mark.asyncio
+async def test_best_detection_id_prefers_snapshot():
+    """get_all_species best_detection_id should prefer a detection with a snapshot."""
+    await upsert_species(DB, "Turdus migratorius", "American Robin")
+    # Insert low-score detection WITH snapshot first
+    id_with_snap = await insert_detection(
+        DB, "evt_snap", "Turdus migratorius", "American Robin", 0.5, "ai_classified", "cam",
+        snapshot_path="/data/snapshots/evt_snap.jpg",
+    )
+    # Insert high-score detection WITHOUT snapshot
+    await insert_detection(
+        DB, "evt_nosnap", "Turdus migratorius", "American Robin", 0.95, "ai_classified", "cam",
+        snapshot_path=None,
+    )
+    species = await get_all_species(DB)
+    assert len(species) == 1
+    assert species[0]["best_detection_id"] == id_with_snap
 
 
 @pytest.mark.asyncio
@@ -355,3 +481,90 @@ async def test_get_db_size_bytes(tmp_path):
 async def test_get_db_size_bytes_missing():
     size = await get_db_size_bytes("/nonexistent/path.db")
     assert size == 0
+
+
+# ---------------------------------------------------------------------------
+# migrate_wamf — common name resolution
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_migrate_wamf_applies_common_names(tmp_path):
+    """Imported species must get common names from BIRD_NAMES, not fall back to scientific name."""
+    import aiosqlite
+    from src.migrate_wamf import migrate_wamf
+
+    # Build a minimal WAMF source DB
+    src_path = str(tmp_path / "wamf.db")
+    async with aiosqlite.connect(src_path) as src:
+        await src.execute(
+            "CREATE TABLE detections (detection_time TEXT, display_name TEXT, score REAL, frigate_event TEXT, camera_name TEXT)"
+        )
+        # Two species in BIRD_NAMES, one unknown
+        await src.executemany(
+            "INSERT INTO detections VALUES (?, ?, ?, ?, ?)",
+            [
+                ("2024-01-01 08:00:00", "Poecile atricapillus", 0.9, "evt-001", "birdcam"),
+                ("2024-01-01 09:00:00", "Haemorhous mexicanus", 0.8, "evt-002", "birdcam"),
+                ("2024-01-01 10:00:00", "Unknown species xyz", 0.7, "evt-003", "birdcam"),
+            ],
+        )
+        await src.commit()
+
+    dest_path = str(tmp_path / "feederwatch.db")
+    from src.db import init_db
+    await init_db(dest_path)
+
+    result = await migrate_wamf(src_path, dest_path)
+    assert result["imported"] == 3
+
+    async with aiosqlite.connect(dest_path) as db:
+        db.row_factory = aiosqlite.Row
+        rows = await db.execute_fetchall(
+            "SELECT scientific_name, common_name FROM species ORDER BY scientific_name"
+        )
+        names = {r["scientific_name"]: r["common_name"] for r in rows}
+
+    # Known species must have common names, not scientific names
+    assert names["Poecile atricapillus"] == "Black-capped Chickadee"
+    assert names["Haemorhous mexicanus"] == "House Finch"
+    # Unknown species falls back to scientific name (expected)
+    assert names["Unknown species xyz"] == "Unknown species xyz"
+
+
+@pytest.mark.asyncio
+async def test_migrate_wamf_overwrites_wrong_common_name(tmp_path):
+    """If dest DB already has a species row with wrong common_name, import must correct it."""
+    import aiosqlite
+    from src.migrate_wamf import migrate_wamf
+    from src.db import init_db
+
+    dest_path = str(tmp_path / "feederwatch.db")
+    await init_db(dest_path)
+
+    # Pre-populate dest with a wrong common_name (simulates prior partial import)
+    async with aiosqlite.connect(dest_path) as db:
+        await db.execute(
+            "INSERT INTO species (scientific_name, common_name) VALUES (?, ?)",
+            ("Poecile atricapillus", "Poecile atricapillus"),  # wrong
+        )
+        await db.commit()
+
+    src_path = str(tmp_path / "wamf.db")
+    async with aiosqlite.connect(src_path) as src:
+        await src.execute(
+            "CREATE TABLE detections (detection_time TEXT, display_name TEXT, score REAL, frigate_event TEXT, camera_name TEXT)"
+        )
+        await src.execute(
+            "INSERT INTO detections VALUES (?, ?, ?, ?, ?)",
+            ("2024-01-01 08:00:00", "Poecile atricapillus", 0.9, "evt-001", "birdcam"),
+        )
+        await src.commit()
+
+    await migrate_wamf(src_path, dest_path)
+
+    async with aiosqlite.connect(dest_path) as db:
+        db.row_factory = aiosqlite.Row
+        row = await db.execute_fetchall(
+            "SELECT common_name FROM species WHERE scientific_name = 'Poecile atricapillus'"
+        )
+    assert row[0]["common_name"] == "Black-capped Chickadee"

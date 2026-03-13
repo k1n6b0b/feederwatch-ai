@@ -81,7 +81,7 @@ function StatusSection({ data }: { data: StatusResponse }) {
         <ServiceRow
           label="Frigate"
           ok={data.frigate.reachable}
-          detail={data.frigate.url}
+          detail={data.frigate.api_url}
           hint={frigateHint}
         />
         {/* Model */}

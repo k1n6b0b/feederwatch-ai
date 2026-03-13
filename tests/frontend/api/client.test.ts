@@ -46,28 +46,27 @@ describe('aabUrl', () => {
 // ---------------------------------------------------------------------------
 
 describe('frigateEventUrl', () => {
-  it('builds correct URL', () => {
+  it('builds correct URL using /review?id= format (Frigate 0.14+)', () => {
     expect(frigateEventUrl('http://192.168.1.10:5000', 'abc-123')).toBe(
-      'http://192.168.1.10:5000/events/abc-123'
+      'http://192.168.1.10:5000/review?id=abc-123'
     )
   })
 
   it('does not produce double-slash in path', () => {
     const url = frigateEventUrl('http://frigate.local:5000', 'evt-456')
-    // Should be .../events/... not ...//events/...
     expect(url).not.toMatch(/[^:]\/\//)
-    expect(url).toContain('/events/evt-456')
+    expect(url).toContain('/review?id=evt-456')
   })
 
   it('strips trailing slash from base URL', () => {
     expect(frigateEventUrl('http://frigate.local:5000/', 'evt-789')).toBe(
-      'http://frigate.local:5000/events/evt-789'
+      'http://frigate.local:5000/review?id=evt-789'
     )
   })
 
   it('encodes special characters in event ID', () => {
     const url = frigateEventUrl('http://frigate.local:5000', '1773407461.534049-3st0ju')
-    expect(url).toBe('http://frigate.local:5000/events/1773407461.534049-3st0ju')
+    expect(url).toBe('http://frigate.local:5000/review?id=1773407461.534049-3st0ju')
   })
 })
 

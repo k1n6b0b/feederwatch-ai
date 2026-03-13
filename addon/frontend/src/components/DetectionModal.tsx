@@ -8,6 +8,7 @@ interface DetectionModalProps {
   frigateBaseUrl: string
   onClose: () => void
   onRemove?: (id: number) => void
+  onReclassifySuccess?: (speciesDeleted: boolean) => void
 }
 
 function SourceBadge({ detection }: { detection: Detection }) {
@@ -28,7 +29,7 @@ function ReclassifyPanel({
   onCancel,
 }: {
   detectionId: number
-  onSuccess: (scientificName: string, commonName: string) => void
+  onSuccess: (scientificName: string, commonName: string, speciesDeleted: boolean) => void
   onCancel: () => void
 }) {
   const [query, setQuery] = useState('')
@@ -58,11 +59,11 @@ function ReclassifyPanel({
     if (!selected) return
     setConfirming(true)
     try {
-      await detectionsApi.reclassify(detectionId, {
+      const result = await detectionsApi.reclassify(detectionId, {
         scientific_name: selected.scientific_name,
         common_name: selected.common_name,
       })
-      onSuccess(selected.scientific_name, selected.common_name)
+      onSuccess(selected.scientific_name, selected.common_name, result.species_deleted ?? false)
     } catch (err) {
       console.error('Reclassify failed:', err)
     } finally {
@@ -130,6 +131,7 @@ export default function DetectionModal({
   frigateBaseUrl,
   onClose,
   onRemove,
+  onReclassifySuccess,
 }: DetectionModalProps) {
   const backdropRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
@@ -175,7 +177,7 @@ export default function DetectionModal({
     }
   }
 
-  function handleReclassifySuccess(scientificName: string, commonName: string) {
+  function handleReclassifySuccess(scientificName: string, commonName: string, speciesDeleted: boolean) {
     setCurrentDetection(d => ({
       ...d,
       scientific_name: scientificName,
@@ -185,6 +187,7 @@ export default function DetectionModal({
     setShowReclassify(false)
     queryClient.invalidateQueries({ queryKey: ['detections'] })
     queryClient.invalidateQueries({ queryKey: ['species'] })
+    onReclassifySuccess?.(speciesDeleted)
   }
 
   const isDuplicate = currentDetection.common_name === currentDetection.scientific_name

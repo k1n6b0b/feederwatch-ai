@@ -159,7 +159,7 @@ async def get_all_species(
                 (
                     SELECT id FROM detections
                     WHERE scientific_name = s.scientific_name
-                    ORDER BY score DESC NULLS LAST
+                    ORDER BY (snapshot_path IS NOT NULL) DESC, score DESC NULLS LAST
                     LIMIT 1
                 ) AS best_detection_id
             FROM species s
@@ -188,7 +188,7 @@ async def get_species_detail(db_path: str, scientific_name: str) -> dict[str, An
                 (
                     SELECT id FROM detections
                     WHERE scientific_name = s.scientific_name
-                    ORDER BY score DESC NULLS LAST
+                    ORDER BY (snapshot_path IS NOT NULL) DESC, score DESC NULLS LAST
                     LIMIT 1
                 ) AS best_detection_id,
                 json_group_array(
@@ -462,10 +462,23 @@ async def reclassify_detection(
     detection_id: int,
     scientific_name: str,
     common_name: str,
-) -> bool:
-    """Update detection classification. Preserves original score for audit."""
+) -> dict | None:
+    """Update detection classification. Preserves original score for audit.
+
+    Returns result dict with species_deleted=True if the old species had no
+    remaining detections and was removed. Returns None if detection not found.
+    """
     async with aiosqlite.connect(db_path) as db:
-        cursor = await db.execute(
+        db.row_factory = aiosqlite.Row
+        # Capture old scientific_name before update
+        rows = await db.execute_fetchall(
+            "SELECT scientific_name FROM detections WHERE id = ?", (detection_id,)
+        )
+        if not rows:
+            return None
+        old_scientific: str = rows[0]["scientific_name"]
+
+        await db.execute(
             """
             UPDATE detections
             SET scientific_name = ?, common_name = ?, category_name = 'human_reclassified'
@@ -473,8 +486,23 @@ async def reclassify_detection(
             """,
             (scientific_name, common_name, detection_id),
         )
+
+        # Clean up old species if it has no remaining detections
+        species_deleted = False
+        if old_scientific != scientific_name:
+            count_rows = await db.execute_fetchall(
+                "SELECT COUNT(*) AS n FROM detections WHERE scientific_name = ?",
+                (old_scientific,),
+            )
+            remaining = count_rows[0]["n"] if count_rows else 0
+            if remaining == 0:
+                await db.execute(
+                    "DELETE FROM species WHERE scientific_name = ?", (old_scientific,)
+                )
+                species_deleted = True
+
         await db.commit()
-    return cursor.rowcount > 0
+    return {"reclassified": True, "id": detection_id, "species_deleted": species_deleted}
 
 
 async def get_detection_by_id(db_path: str, detection_id: int) -> dict[str, Any] | None:
@@ -511,31 +539,106 @@ async def is_first_ever_species(db_path: str, scientific_name: str) -> bool:
 async def backfill_common_names(db_path: str) -> int:
     """Idempotent startup migration: update rows where common_name == scientific_name.
 
-    Only touches rows where the names are identical (the WAMF-import / early-insert
-    default). Safe to run on every startup — a no-op once rows are already correct.
+    Queries the DB for all wrong rows first, then looks up each one. This approach
+    catches every wrong row regardless of how it was created (MQTT pipeline, WAMF
+    import, old code, backfill_reversed_sublabels side-effects). Safe to run on every
+    startup — a single fast SELECT is the only cost once all rows are already correct.
     Returns the number of species rows updated.
     """
-    from .bird_names import BIRD_NAMES
-
-    if not BIRD_NAMES:
-        return 0
+    from .bird_names import get_common_name
 
     count = 0
     async with aiosqlite.connect(db_path) as db:
-        for sci, common in BIRD_NAMES.items():
-            cursor = await db.execute(
-                "UPDATE species SET common_name=? WHERE scientific_name=? AND common_name=scientific_name",
-                (common, sci),
-            )
-            count += cursor.rowcount
-            await db.execute(
-                "UPDATE detections SET common_name=? WHERE scientific_name=? AND common_name=scientific_name",
-                (common, sci),
-            )
+        db.row_factory = aiosqlite.Row
+        wrong = await db.execute_fetchall(
+            "SELECT scientific_name FROM species WHERE common_name = scientific_name"
+        )
+        for row in wrong:
+            sci = row["scientific_name"]
+            common = get_common_name(sci)
+            if common:  # no-op for species genuinely absent from BIRD_NAMES
+                await db.execute(
+                    "UPDATE species SET common_name=? WHERE scientific_name=?",
+                    (common, sci),
+                )
+                await db.execute(
+                    "UPDATE detections SET common_name=? WHERE scientific_name=? AND common_name=scientific_name",
+                    (common, sci),
+                )
+                count += 1
         await db.commit()
 
     if count > 0:
         _LOGGER.info("Backfilled common names for %d species rows", count)
+    return count
+
+
+async def backfill_reversed_sublabels(db_path: str) -> int:
+    """Idempotent startup migration: fix detections where scientific_name is actually
+    a common name (pre-B13 Frigate sub_labels stored verbatim, e.g. 'House Finch').
+
+    Finds all detections whose scientific_name is a key in COMMON_TO_SCIENTIFIC,
+    updates them to the correct scientific_name, and merges/removes the bad species row.
+    Returns the number of detection rows fixed.
+    """
+    from .bird_names import COMMON_TO_SCIENTIFIC
+
+    if not COMMON_TO_SCIENTIFIC:
+        return 0
+
+    count = 0
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+
+        # Find all distinct wrong scientific_names currently in use
+        rows = await db.execute_fetchall(
+            "SELECT DISTINCT scientific_name FROM detections"
+        )
+        wrong_names = [
+            r["scientific_name"]
+            for r in rows
+            if r["scientific_name"] in COMMON_TO_SCIENTIFIC
+        ]
+
+        for wrong_sci in wrong_names:
+            real_sci = COMMON_TO_SCIENTIFIC[wrong_sci]
+            # wrong_sci IS the common name; keep it as common_name
+            common = wrong_sci
+
+            # Ensure correct species row exists with the right common_name.
+            # Use upsert (not INSERT OR IGNORE) so an existing row with wrong
+            # common_name is corrected, not silently skipped.
+            await db.execute(
+                """
+                INSERT INTO species (scientific_name, common_name) VALUES (?, ?)
+                ON CONFLICT(scientific_name) DO UPDATE SET common_name = excluded.common_name
+                """,
+                (real_sci, common),
+            )
+
+            # Move all detections from wrong scientific_name to correct one
+            cursor = await db.execute(
+                """
+                UPDATE detections
+                SET scientific_name = ?, common_name = ?
+                WHERE scientific_name = ?
+                """,
+                (real_sci, common, wrong_sci),
+            )
+            count += cursor.rowcount
+
+            # Remove the wrong species row (no detections remain)
+            await db.execute(
+                "DELETE FROM species WHERE scientific_name = ?", (wrong_sci,)
+            )
+
+        if count > 0:
+            await db.commit()
+
+    if count > 0:
+        _LOGGER.info(
+            "Backfilled %d detection(s) with reversed sub_label scientific names", count
+        )
     return count
 
 

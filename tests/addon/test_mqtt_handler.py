@@ -21,7 +21,7 @@ from src.db import init_db
 
 def make_config():
     return Config(
-        frigate_url="http://frigate:5000",
+        frigate_api_url="http://frigate:5000",
         mqtt_host="localhost",
         mqtt_port=1883,
         camera_names=["birdcam"],

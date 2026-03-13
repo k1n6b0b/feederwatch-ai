@@ -215,7 +215,7 @@ async def handle_status(request: web.Request) -> web.Response:
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{config.frigate_url}/api/version",
+                f"{config.frigate_api_url}/api/version",
                 timeout=aiohttp.ClientTimeout(total=2),
             ) as resp:
                 frigate_reachable = resp.status < 500
@@ -250,7 +250,8 @@ async def handle_status(request: web.Request) -> web.Response:
         },
         "frigate": {
             "reachable": frigate_reachable,
-            "url": config.frigate_url,
+            "api_url": config.frigate_api_url,
+            "clips_ui_url": config.frigate_clips_ui_url or config.frigate_api_url,
         },
         "model": {
             "loaded": model_loaded,
@@ -264,7 +265,7 @@ async def handle_status(request: web.Request) -> web.Response:
             "size_bytes": db_size,
         },
         "uptime_seconds": int(uptime),
-        "version": "0.1.2-alpha.1",  # keep in sync with addon/config.yaml
+        "version": "0.1.2",  # keep in sync with addon/config.yaml
         "discovery": _discovery_cache,
     })
 
@@ -350,16 +351,17 @@ async def handle_reclassify_detection(request: web.Request) -> web.Response:
 
     db_path: str = request.app["db_path"]
     await upsert_species(db_path, params.scientific_name, params.common_name)
-    updated = await reclassify_detection(
+    result = await reclassify_detection(
         db_path, detection_id, params.scientific_name, params.common_name
     )
-    if not updated:
+    if not result:
         raise web.HTTPNotFound(reason="Detection not found")
     return _json_response({
         "reclassified": True,
         "id": detection_id,
         "scientific_name": params.scientific_name,
         "common_name": params.common_name,
+        "species_deleted": result.get("species_deleted", False),
     })
 
 
@@ -432,7 +434,7 @@ async def handle_snapshot(request: web.Request) -> web.Response:
 
     # Fall back to Frigate — URL-encode event ID to prevent path injection
     event_id = quote(str(detection["frigate_event_id"]), safe="")
-    frigate_url = f"{config.frigate_url}/api/events/{event_id}/snapshot.jpg"
+    frigate_url = f"{config.frigate_api_url}/api/events/{event_id}/snapshot.jpg"
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(frigate_url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
@@ -461,7 +463,7 @@ async def handle_detection_clip(request: web.Request) -> web.Response:
         raise web.HTTPNotFound(reason="Detection not found")
 
     event_id = quote(str(detection["frigate_event_id"]), safe="")
-    clip_url = f"{config.frigate_url}/api/events/{event_id}/clip.mp4"
+    clip_url = f"{config.frigate_api_url}/api/events/{event_id}/clip.mp4"
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(clip_url, timeout=aiohttp.ClientTimeout(total=30)) as resp:

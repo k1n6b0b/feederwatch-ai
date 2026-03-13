@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { Species } from '../types/api'
 import { detections as detectionsApi } from '../api/client'
 
@@ -8,10 +9,11 @@ interface SpeciesCardProps {
 }
 
 export default function SpeciesCard({ species, isNewToday, onClick }: SpeciesCardProps) {
-  const firstSeen = new Date(species.first_seen)
-  const lastSeen  = new Date(species.last_seen)
+  const [imgFailed, setImgFailed] = useState(false)
+  const firstSeen = species.first_seen ? new Date(species.first_seen) : null
+  const lastSeen  = species.last_seen  ? new Date(species.last_seen)  : null
   const today     = new Date()
-  const isToday   = lastSeen.toDateString() === today.toDateString()
+  const isToday   = lastSeen != null && lastSeen.toDateString() === today.toDateString()
 
   return (
     <button
@@ -21,12 +23,13 @@ export default function SpeciesCard({ species, isNewToday, onClick }: SpeciesCar
     >
       {/* Best photo */}
       <div className="aspect-video bg-surface-elevated overflow-hidden relative">
-        {species.best_detection_id != null ? (
+        {species.best_detection_id != null && !imgFailed ? (
           <img
             src={detectionsApi.snapshotUrl(species.best_detection_id)}
             alt={species.common_name}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
             loading="lazy"
+            onError={() => setImgFailed(true)}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-slate-600">
@@ -53,8 +56,8 @@ export default function SpeciesCard({ species, isNewToday, onClick }: SpeciesCar
         </div>
 
         <div className="text-xs text-slate-600 space-y-0.5">
-          <div>First: {firstSeen.toLocaleDateString()}</div>
-          <div>Last: {isToday ? 'today' : lastSeen.toLocaleDateString()}</div>
+          <div>First: {firstSeen ? firstSeen.toLocaleDateString() : '—'}</div>
+          <div>Last: {isToday ? 'today' : (lastSeen ? lastSeen.toLocaleDateString() : '—')}</div>
         </div>
       </div>
     </button>

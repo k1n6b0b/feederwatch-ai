@@ -19,6 +19,9 @@ import logging
 
 import aiosqlite
 
+from .bird_names import get_common_name
+from .db import backfill_common_names
+
 _LOGGER = logging.getLogger(__name__)
 
 _SELECT = """
@@ -27,8 +30,8 @@ _SELECT = """
 """
 
 _INSERT_SPECIES = """
-    INSERT OR IGNORE INTO species (scientific_name, common_name)
-    VALUES (?, ?)
+    INSERT INTO species (scientific_name, common_name) VALUES (?, ?)
+    ON CONFLICT(scientific_name) DO UPDATE SET common_name = excluded.common_name
 """
 
 _INSERT_DETECTION = """
@@ -53,22 +56,11 @@ async def migrate_wamf(source_db: str, dest_db: str) -> dict[str, int]:
         async with aiosqlite.connect(dest_db) as dst:
             await dst.execute("PRAGMA foreign_keys=ON")
 
-            # Pre-load known common names from destination so imported species
-            # get proper display names rather than falling back to scientific name.
-            dst.row_factory = aiosqlite.Row
-            known_names_rows = await dst.execute_fetchall(
-                "SELECT scientific_name, common_name FROM species"
-            )
-            known_names: dict[str, str] = {
-                r["scientific_name"]: r["common_name"] for r in known_names_rows
-            }
-
             try:
                 async with src.execute(_SELECT) as cursor:
                     async for row in cursor:
                         scientific_name = row["display_name"] or ""
-                        # Use known common name if available; fall back to scientific name
-                        common_name = known_names.get(scientific_name, scientific_name)
+                        common_name = get_common_name(scientific_name) or scientific_name
                         raw_score = row["score"]
                         score = float(raw_score) if raw_score else None
                         category = "ai_classified" if score else "frigate_classified"
@@ -103,6 +95,9 @@ async def migrate_wamf(source_db: str, dest_db: str) -> dict[str, int]:
                 ) from exc
 
             await dst.commit()
+
+    # Fix any pre-existing rows with wrong common names (e.g. from prior partial imports)
+    await backfill_common_names(dest_db)
 
     _LOGGER.info("WAMF migration complete: imported=%d skipped=%d", imported, skipped)
     return {"imported": imported, "skipped": skipped}

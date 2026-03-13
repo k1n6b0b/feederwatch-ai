@@ -85,7 +85,7 @@ export const detections = {
     del<{ deleted: boolean; id: number; species_deleted: boolean }>(`/detections/${id}`),
 
   reclassify: (id: number, body: { scientific_name: string; common_name: string }) =>
-    patch<{ reclassified: boolean; id: number; scientific_name: string; common_name: string }>(
+    patch<{ reclassified: boolean; id: number; scientific_name: string; common_name: string; species_deleted: boolean }>(
       `/detections/${id}/reclassify`,
       body,
     ),
@@ -189,5 +189,5 @@ export function aabUrl(commonName: string, scientificName?: string): string | nu
  * frigateBaseUrl comes from /api/v1/status response.
  */
 export function frigateEventUrl(frigateBaseUrl: string, eventId: string): string {
-  return `${frigateBaseUrl.replace(/\/$/, '')}/events/${encodeURIComponent(eventId)}`
+  return `${frigateBaseUrl.replace(/\/$/, '')}/review?id=${encodeURIComponent(eventId)}`
 }

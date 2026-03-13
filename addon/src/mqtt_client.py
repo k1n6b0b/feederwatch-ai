@@ -389,7 +389,7 @@ class MQTTClient:
                 await self._on_presence(scientific_name, False)
 
     async def _fetch_snapshot(self, frigate_event_id: str) -> bytes | None:
-        url = f"{self._config.frigate_url}/api/events/{frigate_event_id}/snapshot.jpg"
+        url = f"{self._config.frigate_api_url}/api/events/{frigate_event_id}/snapshot.jpg"
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:

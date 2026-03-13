@@ -24,7 +24,7 @@ from src.config import Config
 
 def make_config(**overrides) -> Config:
     defaults = dict(
-        frigate_url="http://frigate:5000",
+        frigate_api_url="http://frigate:5000",
         mqtt_host="homeassistant.local",
         mqtt_port=1883,
         mqtt_username=None,

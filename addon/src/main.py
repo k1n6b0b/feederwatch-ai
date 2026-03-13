@@ -17,7 +17,7 @@ from aiohttp import web
 from .api import broadcast_detection, create_app
 from .classifier import BirdClassifier, LabelMapper
 from .config import load_config
-from .db import backfill_common_names, init_db
+from .db import backfill_common_names, backfill_reversed_sublabels, init_db
 from .mqtt_client import MQTTClient
 from .supervisor import discover_frigate_url, discover_mqtt
 
@@ -68,11 +68,11 @@ async def main() -> None:
         else:
             _LOGGER.info("Supervisor MQTT broker confirmed at %s:%s", mqtt_disc["host"], mqtt_disc.get("port"))
     if isinstance(frigate_disc, str):
-        if frigate_disc.rstrip("/") != config.frigate_url.rstrip("/"):
+        if frigate_disc.rstrip("/") != config.frigate_api_url.rstrip("/"):
             _LOGGER.info(
                 "Supervisor detected Frigate at %s but config points to %s — "
-                "update add-on config if Frigate is not reachable",
-                frigate_disc, config.frigate_url,
+                "update frigate_api_url in add-on config if Frigate is not reachable",
+                frigate_disc, config.frigate_api_url,
             )
         else:
             _LOGGER.info("Supervisor Frigate confirmed at %s", frigate_disc)
@@ -81,6 +81,7 @@ async def main() -> None:
     _LOGGER.info("Initializing database at %s", DB_PATH)
     await init_db(DB_PATH)
     await backfill_common_names(DB_PATH)
+    await backfill_reversed_sublabels(DB_PATH)
 
     # Load classifier
     classifier = BirdClassifier(model_path=config.model_path)
