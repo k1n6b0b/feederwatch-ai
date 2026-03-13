@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 import aiosqlite
@@ -255,16 +255,17 @@ async def insert_detection(
     camera_name: str,
     snapshot_path: str | None = None,
 ) -> int:
+    detected_at = datetime.now().isoformat(timespec="seconds")
     async with aiosqlite.connect(db_path) as db:
         cursor = await db.execute(
             """
             INSERT INTO detections
                 (frigate_event_id, scientific_name, common_name, score,
-                 category_name, camera_name, snapshot_path)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                 category_name, camera_name, snapshot_path, detected_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (frigate_event_id, scientific_name, common_name, score,
-             category_name, camera_name, snapshot_path),
+             category_name, camera_name, snapshot_path, detected_at),
         )
         await db.commit()
         return cursor.lastrowid
