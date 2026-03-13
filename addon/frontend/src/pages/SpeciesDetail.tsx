@@ -1,4 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom'
+import { useEffect } from 'react'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { useSpeciesDetail, useSpeciesPhenology } from '../hooks/useSpecies'
 import { aabUrl, detections as detectionsApi, species as speciesApi } from '../api/client'
@@ -27,6 +28,12 @@ function SpeciesDetailInner({
   scientificName: string
   navigate: ReturnType<typeof useNavigate>
 }) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') navigate(-1) }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [navigate])
+
   const { data: detail, isLoading } = useSpeciesDetail(scientificName)
   const { data: phenology } = useSpeciesPhenology(scientificName)
 

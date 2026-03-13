@@ -13,6 +13,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../addon"))
 
 from src.db import (
+    backfill_common_names,
     delete_detection,
     detection_exists,
     get_all_species,
@@ -76,6 +77,51 @@ async def test_upsert_species_updates_common_name():
     await upsert_species(DB, "Poecile atricapillus", "Black-capped Chickadee")
     names = await get_display_names(DB, ["Poecile atricapillus"])
     assert names["Poecile atricapillus"] == "Black-capped Chickadee"
+
+
+@pytest.mark.asyncio
+async def test_backfill_common_names_updates_stale_rows():
+    """backfill_common_names fixes rows where common_name == scientific_name."""
+    # Insert species with common_name == scientific_name (pre-backfill state)
+    sci = "Poecile atricapillus"
+    await upsert_species(DB, sci, sci)  # common_name set to scientific_name
+    await insert_detection(
+        DB, "evt-backfill-1", sci, sci, score=0.9,
+        category_name="ai_classified", camera_name="cam",
+    )
+
+    updated = await backfill_common_names(DB)
+
+    # Should have updated at least the species row for this species
+    assert updated >= 1
+    names = await get_display_names(DB, [sci])
+    assert names[sci] != sci  # common name is now different from scientific name
+    assert names[sci] == "Black-capped Chickadee"
+
+
+@pytest.mark.asyncio
+async def test_backfill_common_names_idempotent():
+    """Running backfill twice does not corrupt already-correct rows."""
+    sci = "Poecile atricapillus"
+    await upsert_species(DB, sci, sci)
+
+    await backfill_common_names(DB)
+    await backfill_common_names(DB)  # second run should be a no-op
+
+    names = await get_display_names(DB, [sci])
+    assert names[sci] == "Black-capped Chickadee"
+
+
+@pytest.mark.asyncio
+async def test_backfill_common_names_preserves_correct_rows():
+    """backfill_common_names does not touch rows that already have a real common name."""
+    sci = "Poecile atricapillus"
+    await upsert_species(DB, sci, "Custom Name")
+
+    await backfill_common_names(DB)
+
+    names = await get_display_names(DB, [sci])
+    assert names[sci] == "Custom Name"  # unchanged
 
 
 # ---------------------------------------------------------------------------

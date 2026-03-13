@@ -8,25 +8,9 @@ import { useStatus } from '../hooks/useStatus'
 interface DetectionCardProps {
   detection: Detection
   isNew?: boolean
+  onRemove?: (id: number) => void
 }
 
-function ConfidenceBar({ score }: { score: number }) {
-  const pct = Math.round(score * 100)
-  const color = pct >= 85 ? 'bg-accent' : pct >= 70 ? 'bg-amber-400' : 'bg-red-500'
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 h-1.5 bg-surface-elevated rounded-full overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all duration-500 ${color}`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <span className="text-xs font-mono text-slate-400 tabular-nums w-8 text-right">
-        {pct}%
-      </span>
-    </div>
-  )
-}
 
 function RelativeTime({ isoString }: { isoString: string }) {
   const date = new Date(isoString)
@@ -47,7 +31,7 @@ function RelativeTime({ isoString }: { isoString: string }) {
   )
 }
 
-export default function DetectionCard({ detection, isNew = false }: DetectionCardProps) {
+export default function DetectionCard({ detection, isNew = false, onRemove }: DetectionCardProps) {
   const [modalOpen, setModalOpen] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -67,8 +51,8 @@ export default function DetectionCard({ detection, isNew = false }: DetectionCar
     setDeleting(true)
     try {
       await detectionsApi.delete(detection.id)
-      queryClient.invalidateQueries({ queryKey: ['detections'] })
       queryClient.invalidateQueries({ queryKey: ['species'] })
+      onRemove?.(detection.id)
     } catch (err) {
       console.error('Delete failed:', err)
       setDeleting(false)
@@ -173,11 +157,6 @@ export default function DetectionCard({ detection, isNew = false }: DetectionCar
             <RelativeTime isoString={detection.detected_at} />
           </div>
 
-          {isFrigateClassified ? (
-            <span className="badge badge-frigate">Frigate</span>
-          ) : detection.score !== null ? (
-            <ConfidenceBar score={detection.score} />
-          ) : null}
         </button>
       </div>
 
@@ -186,6 +165,7 @@ export default function DetectionCard({ detection, isNew = false }: DetectionCar
           detection={detection}
           frigateBaseUrl={statusData?.frigate.url ?? ''}
           onClose={() => setModalOpen(false)}
+          onRemove={onRemove}
         />
       )}
     </>

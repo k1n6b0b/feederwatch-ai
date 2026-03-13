@@ -107,5 +107,9 @@ export function useDetectionStream() {
     }
   }, [connectSSE])
 
-  return { detections, streamState, prependDetection }
+  const removeDetection = useCallback((id: number) => {
+    setDetections(prev => prev.filter(d => d.id !== id))
+  }, [])
+
+  return { detections, streamState, prependDetection, removeDetection }
 }

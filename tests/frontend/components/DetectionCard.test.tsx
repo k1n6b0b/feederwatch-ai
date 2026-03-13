@@ -60,18 +60,27 @@ describe('DetectionCard', () => {
     expect(screen.getByText('front_yard')).toBeInTheDocument()
   })
 
-  it('renders confidence percentage for ai_classified', () => {
+  it('does not render ConfidenceBar (removed in B8)', () => {
     wrapper(<DetectionCard detection={makeDetection({ score: 0.92 })} />)
-    expect(screen.getByText('92%')).toBeInTheDocument()
+    // Score is shown in modal, not on the card itself
+    expect(screen.queryByRole('progressbar')).toBeNull()
+    // No percentage text on card face
+    expect(screen.queryByText('92%')).toBeNull()
   })
 
-  it('renders Frigate badge for frigate_classified, not confidence bar', () => {
+  it('does not render Frigate badge on card (removed in B9)', () => {
     wrapper(<DetectionCard detection={makeDetection({
       category_name: 'frigate_classified',
       score: null,
     })} />)
-    expect(screen.getByText('Frigate')).toBeInTheDocument()
-    expect(screen.queryByText(/%/)).toBeNull()
+    expect(screen.queryByText('Frigate')).toBeNull()
+  })
+
+  it('accepts onRemove prop without error', () => {
+    const onRemove = vi.fn()
+    // Verifies the prop interface: component renders cleanly when onRemove is provided
+    wrapper(<DetectionCard detection={makeDetection()} onRemove={onRemove} />)
+    expect(screen.getByText('American Robin')).toBeInTheDocument()
   })
 
   it('renders first-ever badge when is_first_ever=true', () => {

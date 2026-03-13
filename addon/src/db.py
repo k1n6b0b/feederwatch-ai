@@ -508,6 +508,37 @@ async def is_first_ever_species(db_path: str, scientific_name: str) -> bool:
     return (rows[0][0] if rows else 0) == 0
 
 
+async def backfill_common_names(db_path: str) -> int:
+    """Idempotent startup migration: update rows where common_name == scientific_name.
+
+    Only touches rows where the names are identical (the WAMF-import / early-insert
+    default). Safe to run on every startup — a no-op once rows are already correct.
+    Returns the number of species rows updated.
+    """
+    from .bird_names import BIRD_NAMES
+
+    if not BIRD_NAMES:
+        return 0
+
+    count = 0
+    async with aiosqlite.connect(db_path) as db:
+        for sci, common in BIRD_NAMES.items():
+            cursor = await db.execute(
+                "UPDATE species SET common_name=? WHERE scientific_name=? AND common_name=scientific_name",
+                (common, sci),
+            )
+            count += cursor.rowcount
+            await db.execute(
+                "UPDATE detections SET common_name=? WHERE scientific_name=? AND common_name=scientific_name",
+                (common, sci),
+            )
+        await db.commit()
+
+    if count > 0:
+        _LOGGER.info("Backfilled common names for %d species rows", count)
+    return count
+
+
 async def get_weekly_heatmap(db_path: str, days: int = 28) -> list[dict[str, Any]]:
     """Day-of-week × hour-of-day counts for the last `days` days.
 

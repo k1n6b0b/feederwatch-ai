@@ -189,5 +189,5 @@ export function aabUrl(commonName: string, scientificName?: string): string | nu
  * frigateBaseUrl comes from /api/v1/status response.
  */
 export function frigateEventUrl(frigateBaseUrl: string, eventId: string): string {
-  return `${frigateBaseUrl}/events/${encodeURIComponent(eventId)}`
+  return `${frigateBaseUrl.replace(/\/$/, '')}/events/${encodeURIComponent(eventId)}`
 }

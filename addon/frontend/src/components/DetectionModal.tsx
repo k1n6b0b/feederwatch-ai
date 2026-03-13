@@ -7,6 +7,7 @@ interface DetectionModalProps {
   detection: Detection
   frigateBaseUrl: string
   onClose: () => void
+  onRemove?: (id: number) => void
 }
 
 function SourceBadge({ detection }: { detection: Detection }) {
@@ -128,6 +129,7 @@ export default function DetectionModal({
   detection,
   frigateBaseUrl,
   onClose,
+  onRemove,
 }: DetectionModalProps) {
   const backdropRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
@@ -163,8 +165,8 @@ export default function DetectionModal({
     setDeleting(true)
     try {
       await detectionsApi.delete(currentDetection.id)
-      queryClient.invalidateQueries({ queryKey: ['detections'] })
       queryClient.invalidateQueries({ queryKey: ['species'] })
+      onRemove?.(currentDetection.id)
       onClose()
     } catch (err) {
       console.error('Delete failed:', err)

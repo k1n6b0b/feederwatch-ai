@@ -17,7 +17,7 @@ from aiohttp import web
 from .api import broadcast_detection, create_app
 from .classifier import BirdClassifier, LabelMapper
 from .config import load_config
-from .db import init_db
+from .db import backfill_common_names, init_db
 from .mqtt_client import MQTTClient
 from .supervisor import discover_frigate_url, discover_mqtt
 
@@ -80,6 +80,7 @@ async def main() -> None:
     # Initialize database
     _LOGGER.info("Initializing database at %s", DB_PATH)
     await init_db(DB_PATH)
+    await backfill_common_names(DB_PATH)
 
     # Load classifier
     classifier = BirdClassifier(model_path=config.model_path)

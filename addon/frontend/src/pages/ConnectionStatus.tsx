@@ -4,7 +4,8 @@
  * Shows: component health, ring buffer of last 50 MQTT events.
  */
 
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { admin, status as statusApi, events as eventsApi } from '../api/client'
 import type { MqttRingEntry, StatusResponse } from '../types/api'
@@ -281,6 +282,14 @@ function WamfImportCard() {
 // ---------------------------------------------------------------------------
 
 export default function ConnectionStatus() {
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') navigate(-1) }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [navigate])
+
   const { data: statusData, isLoading: statusLoading, refetch: refetchStatus } = useQuery({
     queryKey: ['status'],
     queryFn: statusApi.get,
