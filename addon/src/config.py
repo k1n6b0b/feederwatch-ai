@@ -69,7 +69,7 @@ def load_config() -> Config:
         mqtt_username=data.get("mqtt_username") or None,
         mqtt_password=data.get("mqtt_password") or None,
         mqtt_use_tls=bool(data.get("mqtt_use_tls", False)),
-        camera_names=list(data.get("camera_names", [])),
+        camera_names=[n.lower() for n in data.get("camera_names", [])],
         classification_threshold=float(data.get("classification_threshold", 0.7)),
         model_path=data.get("model_path", "/data/model.tflite"),
         store_snapshots=bool(data.get("store_snapshots", True)),

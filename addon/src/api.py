@@ -91,6 +91,12 @@ async def rate_limit_middleware(request: web.Request, handler: Any) -> web.Respo
     _rate_limit_counters[key] = [t for t in window if now - t < RATE_LIMIT_WINDOW]
     _rate_limit_counters[key].append(now)
 
+    # Evict keys that haven't been seen in two windows (prevents unbounded growth)
+    if len(_rate_limit_counters) > 1000:
+        stale = [k for k, v in _rate_limit_counters.items() if not v or now - v[-1] > RATE_LIMIT_WINDOW * 2]
+        for k in stale:
+            del _rate_limit_counters[k]
+
     if len(_rate_limit_counters[key]) > RATE_LIMIT_MAX:
         raise web.HTTPTooManyRequests(reason="Rate limit exceeded")
 
@@ -213,7 +219,7 @@ async def handle_status(request: web.Request) -> web.Response:
                 timeout=aiohttp.ClientTimeout(total=2),
             ) as resp:
                 frigate_reachable = resp.status < 500
-    except Exception:
+    except Exception:  # nosec B110 — intentional: unreachable Frigate is reported as degraded
         pass
 
     model_loaded = classifier.is_loaded if classifier else False
@@ -258,7 +264,7 @@ async def handle_status(request: web.Request) -> web.Response:
             "size_bytes": db_size,
         },
         "uptime_seconds": int(uptime),
-        "version": "0.1.0",
+        "version": "0.1.1",  # keep in sync with addon/config.yaml
         "discovery": _discovery_cache,
     })
 
@@ -644,7 +650,10 @@ async def handle_detection_stream(request: web.Request) -> web.StreamResponse:
                 break
     finally:
         ka_task.cancel()
-        sse_subscribers.remove(queue)
+        try:
+            sse_subscribers.remove(queue)
+        except ValueError:
+            pass
 
     return response
 
@@ -667,7 +676,11 @@ def create_app(
     mqtt_client: Any = None,
     static_path: str = "/app/frontend/dist",
 ) -> web.Application:
-    app = web.Application(middlewares=[security_headers_middleware, rate_limit_middleware])
+    # client_max_size covers the WAMF import: a 100 MB SQLite DB encodes to ~133 MB base64
+    app = web.Application(
+        middlewares=[security_headers_middleware, rate_limit_middleware],
+        client_max_size=150 * 1024 * 1024,
+    )
 
     app["config"] = config
     app["db_path"] = db_path

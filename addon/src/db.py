@@ -84,7 +84,7 @@ async def _get_version(db: aiosqlite.Connection) -> int:
 
 
 async def _set_version(db: aiosqlite.Connection, version: int) -> None:
-    await db.execute(f"PRAGMA user_version = {version}")
+    await db.execute(f"PRAGMA user_version = {int(version)}")
 
 
 async def _apply_schema_v1(db: aiosqlite.Connection) -> None:
@@ -125,7 +125,7 @@ async def get_display_names(db_path: str, scientific_names: list[str]) -> dict[s
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
         rows = await db.execute_fetchall(
-            f"SELECT scientific_name, common_name FROM species WHERE scientific_name IN ({placeholders})",
+            f"SELECT scientific_name, common_name FROM species WHERE scientific_name IN ({placeholders})",  # nosec B608 — placeholders is only '?,?,?' chars; values are bound params
             scientific_names,
         )
     return {row["scientific_name"]: row["common_name"] for row in rows}
@@ -140,7 +140,7 @@ async def get_all_species(
     order = {
         "count": "total_detections DESC",
         "recent": "last_seen DESC",
-        "alpha": "common_name ASC",
+        "alpha": "s.common_name ASC",
         "first": "first_seen ASC",
     }.get(sort, "total_detections DESC")
 

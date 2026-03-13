@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import aiohttp
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, field_validator
 
 from .classifier import BirdClassifier, LabelMapper
 from .config import Config
@@ -44,6 +44,14 @@ class FrigateEventAfter(BaseModel):
     sub_label: str | None = None
     score: float | None = None
     snapshot: dict | None = None
+
+    @field_validator("sub_label", mode="before")
+    @classmethod
+    def coerce_sub_label(cls, v: Any) -> str | None:
+        """Frigate sends sub_label as [label, score] list; extract just the label."""
+        if isinstance(v, list):
+            return v[0] if v else None
+        return v
 
 
 class FrigateEventPayload(BaseModel):
@@ -210,8 +218,9 @@ class MQTTClient:
 
         camera = after.camera
 
-        # Only process cameras we're configured to monitor
-        if self._config.camera_names and camera not in self._config.camera_names:
+        # Only process cameras we're configured to monitor.
+        # camera_names are normalised to lowercase at config load time.
+        if self._config.camera_names and camera.lower() not in self._config.camera_names:
             return
 
         # Only process bird detections
@@ -374,8 +383,9 @@ class MQTTClient:
         import re
         snapshots_dir = "/data/snapshots"
         os.makedirs(snapshots_dir, exist_ok=True)
-        # Validate event ID is safe for use as a filename (Frigate uses UUID format)
-        if not re.match(r'^[a-zA-Z0-9_\-]+$', frigate_event_id):
+        # Validate event ID is safe for use as a filename
+        # Frigate IDs follow {timestamp}.{microseconds}-{random}, e.g. 1773407461.534049-3st0ju
+        if not re.match(r'^[a-zA-Z0-9_\-\.]+$', frigate_event_id):
             _LOGGER.warning("Rejecting snapshot with unsafe event ID: %r", frigate_event_id)
             return None
         path = f"{snapshots_dir}/{frigate_event_id}.jpg"

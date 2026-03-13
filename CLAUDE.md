@@ -67,7 +67,7 @@ npx tsc --noEmit       # type-check only
 
 ### Deploy to HA (Mountain Duck must be mounted)
 ```bash
-# 1. Build frontend first
+# 1. Build frontend first (if changed)
 cd addon/frontend && npm run build && cd ../..
 
 # 2. Rsync to HA (Mountain Duck mount path is machine-local — see deploy workflow memory)
@@ -75,11 +75,15 @@ rsync -av --exclude='__pycache__' --exclude='*.pyc' --exclude='node_modules' --e
   addon/ \
   "<mountain-duck-mount>/addons/feederwatch_ai/"
 
-# 3. Rebuild (NOT restart — restart reuses old image, changes don't apply)
-ssh hass "ha apps rebuild local_feederwatch_ai"
+# 3. Build image with no-cache using the add-on's image tag (see deploy workflow memory)
+#    NOTE: ha apps rebuild fetches from GitHub — does NOT use local /addons/ files
+ssh hass "docker build --no-cache -t <addon-image-tag> /addons/feederwatch_ai/ 2>&1 | tail -3"
+
+# 4. Restart (uses the freshly built image above)
+ssh hass "ha apps restart <addon-slug>"
 
 # Tail logs
-ssh hass "ha apps logs local_feederwatch_ai 2>&1 | tail -30"
+ssh hass "ha apps logs <addon-slug> 2>&1 | tail -30"
 ```
 
 ### Release
@@ -123,11 +127,33 @@ See `project_versioning.md` memory for the full checklist.
 
 ---
 
+## Work categorization
+
+Before implementing anything from feedback, a review, or a bug report:
+1. Label it **bug** (something broken that was meant to work) or **enhancement** (new capability/polish)
+2. Prioritize bugs as high/medium/low
+3. Bugs always ship in a **patch release** before any enhancement work begins on that milestone
+4. Present the split table to the user before starting — confirm order
+
+## Testing discipline
+
+When adding or modifying any feature:
+1. **Evaluate existing tests** — check whether current tests cover the changed behavior; if they
+   pass for the wrong reason, fix them.
+2. **Recommend new tests** — for every new backend endpoint, db function, or MQTT code path add
+   a pytest test; for every new React component or hook add a vitest test; for every new HA
+   entity or config-flow path add an integration test under `tests/integration/`.
+3. **Write tests before pushing** — do not mark a feature complete until tests exist and pass
+   locally. The full check suite order is: ruff → bandit → trivy → pytest → build + vitest.
+
+---
+
 ## What NOT to do
 
 - Don't use `datetime('now')` in SQLite for new timestamps — use Python `datetime.now()`.
 - Don't use `ha addons` CLI — it's deprecated, use `ha apps`.
-- Don't use `ha apps restart` — use `ha apps rebuild` or source changes won't apply.
+- Don't use `ha apps rebuild` for local dev — it re-pulls from GitHub and ignores local files.
+  Use `docker build --no-cache` + retag + `ha apps restart` (see deploy workflow memory).
 - Don't push to GitHub as a test step — test locally, then push.
 - Don't add config UI — HA handles it.
 - Don't skip the full local check suite before pushing (ruff → bandit → trivy → pytest →
@@ -145,4 +171,9 @@ See `project_versioning.md` memory for the full checklist.
 
 ## Known pre-existing issues
 
-None — 107/107 backend tests and 91/91 frontend tests pass as of v0.1.0.
+None — 111/111 backend tests pass as of v0.1.1. Frontend tests: 91/91 (unchanged).
+
+## Open security notes (non-blocking)
+- CSP `unsafe-inline` on scripts — needed for Vite React; acceptable behind HA Ingress auth
+- Video clip endpoint buffers entire MP4 in RAM — fix in v0.2.0
+- Rate-limit key is `request.remote`; behind HA Ingress this may be the proxy IP

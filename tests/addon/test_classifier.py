@@ -30,19 +30,43 @@ def make_jpeg_bytes(width: int = 224, height: int = 224, color: tuple = (100, 15
     return buf.getvalue()
 
 
-def make_mock_interpreter(num_classes: int = 2100) -> MagicMock:
+def make_mock_interpreter(num_classes: int = 2100, quantized_output: bool = False) -> MagicMock:
     interp = MagicMock()
     interp.get_input_details.return_value = [{
         "index": 0,
         "shape": np.array([1, MODEL_INPUT_SIZE, MODEL_INPUT_SIZE, 3]),
-        "dtype": np.float32,
+        "dtype": np.uint8,  # AiY Birds V1 model uses uint8 input
     }]
-    scores = np.zeros(num_classes, dtype=np.float32)
-    scores[42] = 0.95
-    scores[7] = 0.82
-    scores[100] = 0.61
-    interp.get_output_details.return_value = [{"index": 1}]
-    interp.get_tensor.return_value = np.expand_dims(scores, axis=0)
+    if quantized_output:
+        # Simulate uint8 output with AiY Birds V1 quantization (scale=1/256, zero_point=0)
+        # score 0.95 → uint8 = round(0.95 / 0.00390625) = 243
+        raw = np.zeros(num_classes, dtype=np.uint8)
+        raw[42] = 243  # ≈ 0.949
+        raw[7] = 210   # ≈ 0.820
+        raw[100] = 156 # ≈ 0.609
+        output_detail = {
+            "index": 1,
+            "dtype": np.uint8,
+            "quantization_parameters": {
+                "scales": np.array([0.00390625], dtype=np.float32),
+                "zero_points": np.array([0], dtype=np.int32),
+            },
+        }
+    else:
+        raw = np.zeros(num_classes, dtype=np.float32)
+        raw[42] = 0.95
+        raw[7] = 0.82
+        raw[100] = 0.61
+        output_detail = {
+            "index": 1,
+            "dtype": np.float32,
+            "quantization_parameters": {
+                "scales": np.array([], dtype=np.float32),
+                "zero_points": np.array([], dtype=np.int32),
+            },
+        }
+    interp.get_output_details.return_value = [output_detail]
+    interp.get_tensor.return_value = np.expand_dims(raw, axis=0)
     return interp
 
 
@@ -55,15 +79,17 @@ def test_preprocess_produces_correct_shape():
     image_bytes = make_jpeg_bytes()
     arr = classifier._preprocess(image_bytes)
     assert arr.shape == (1, MODEL_INPUT_SIZE, MODEL_INPUT_SIZE, 3)
-    assert arr.dtype == np.float32
+    assert arr.dtype == np.uint8  # AiY Birds V1 expects uint8, not float32
 
 
-def test_preprocess_normalizes_to_0_1():
+def test_preprocess_uint8_range():
+    """Values must be in [0, 255] — AiY Birds V1 model input is uint8."""
     classifier = BirdClassifier.__new__(BirdClassifier)
     image_bytes = make_jpeg_bytes(color=(255, 255, 255))
     arr = classifier._preprocess(image_bytes)
-    assert arr.max() <= 1.0
-    assert arr.min() >= 0.0
+    assert arr.dtype == np.uint8
+    assert int(arr.max()) <= 255
+    assert int(arr.min()) >= 0
 
 
 def test_preprocess_resizes_arbitrary_input():
@@ -97,6 +123,22 @@ def test_classify_sync_returns_top_k():
     assert len(results) <= 5
     assert results[0]["score"] >= results[-1]["score"]  # sorted descending
     assert all("score" in r and "class_index" in r for r in results)
+
+
+def test_classify_sync_dequantizes_uint8_output():
+    """Quantized uint8 output must be dequantized to float scores in [0, 1]."""
+    classifier = BirdClassifier.__new__(BirdClassifier)
+    classifier._interpreter = make_mock_interpreter(quantized_output=True)
+    classifier._input_details = classifier._interpreter.get_input_details()
+    classifier._output_details = classifier._interpreter.get_output_details()
+    classifier._loaded = True
+
+    results = classifier._classify_sync(make_jpeg_bytes())
+    assert len(results) > 0
+    for r in results:
+        assert 0.0 <= r["score"] <= 1.0, f"Dequantized score {r['score']} out of [0,1]"
+    assert results[0]["class_index"] == 42
+    assert results[0]["score"] == pytest.approx(243 * 0.00390625, abs=0.01)
 
 
 def test_classify_sync_shape_mismatch_raises():

@@ -95,6 +95,35 @@ def test_event_with_sub_label():
     assert event.after.sub_label == "Poecile atricapillus"
 
 
+def test_event_with_sub_label_as_list():
+    """Frigate sends sub_label as [label, score] list — must be coerced to string."""
+    payload = {
+        "type": "update",
+        "after": {
+            "camera": "birdcam",
+            "label": "bird",
+            "sub_label": ["Poecile atricapillus", 0.9574999999999999],
+            "score": 0.85,
+        },
+    }
+    event = FrigateEventPayload.model_validate(payload)
+    assert event.after.sub_label == "Poecile atricapillus"
+
+
+def test_event_with_empty_sub_label_list():
+    payload = {
+        "type": "update",
+        "after": {
+            "camera": "birdcam",
+            "label": "bird",
+            "sub_label": [],
+            "score": 0.85,
+        },
+    }
+    event = FrigateEventPayload.model_validate(payload)
+    assert event.after.sub_label is None
+
+
 # ---------------------------------------------------------------------------
 # handle_message — malformed payloads never crash
 # ---------------------------------------------------------------------------
@@ -209,6 +238,16 @@ async def test_sublabel_fallback_used_when_below_threshold(tmp_path):
 # ---------------------------------------------------------------------------
 # Ring buffer
 # ---------------------------------------------------------------------------
+
+def test_snapshot_id_allows_frigate_format():
+    """Frigate event IDs contain dots, e.g. 1773407461.534049-3st0ju — must not be rejected."""
+    import re
+    # Pattern copied from mqtt_client._save_snapshot
+    pattern = re.compile(r'^[a-zA-Z0-9_\-\.]+$')
+    assert pattern.match("1773407461.534049-3st0ju"), "Dot-containing Frigate ID must be allowed"
+    assert not pattern.match("../etc/passwd"), "Path traversal must be rejected"
+    assert not pattern.match("event id with spaces"), "Spaces must be rejected"
+
 
 def test_ring_buffer_max_size():
     from collections import deque

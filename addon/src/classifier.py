@@ -83,8 +83,19 @@ class BirdClassifier:
         self._interpreter.set_tensor(input_detail["index"], image_array)
         self._interpreter.invoke()
 
-        output = self._interpreter.get_tensor(self._output_details[0]["index"])
-        scores = output[0]  # shape: [num_classes]
+        output_detail = self._output_details[0]
+        output = self._interpreter.get_tensor(output_detail["index"])
+        raw_scores = output[0]  # shape: [num_classes]
+
+        # Dequantize if the output tensor is integer-typed (uint8/int8).
+        # AiY Birds V1 quantization: scale=0.00390625, zero_point=0
+        quant_params = output_detail.get("quantization_parameters", {})
+        scales = quant_params.get("scales")
+        zero_points = quant_params.get("zero_points")
+        if raw_scores.dtype != np.float32 and scales is not None and len(scales) > 0:
+            scores = (raw_scores.astype(np.float32) - float(zero_points[0])) * float(scales[0])
+        else:
+            scores = raw_scores.astype(np.float32)
 
         # Top-K results
         top_indices = np.argsort(scores)[::-1][:TOP_K]
@@ -100,14 +111,17 @@ class BirdClassifier:
         return results
 
     def _preprocess(self, image_bytes: bytes) -> np.ndarray:
-        """Decode JPEG/PNG bytes → normalized float32 tensor [1, 224, 224, 3]."""
+        """Decode JPEG/PNG bytes → uint8 tensor [1, 224, 224, 3].
+
+        AiY Birds V1 (and most quantized TFLite models) expect uint8 [0, 255],
+        not float32 normalized to [0, 1].
+        """
         from PIL import Image  # type: ignore[import]
         import io
 
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         img = img.resize((MODEL_INPUT_SIZE, MODEL_INPUT_SIZE), Image.LANCZOS)
-        arr = np.array(img, dtype=np.float32)
-        arr = arr / 255.0  # normalize to [0, 1]
+        arr = np.array(img, dtype=np.uint8)
         return np.expand_dims(arr, axis=0)  # [1, 224, 224, 3]
 
     def shutdown(self) -> None:
