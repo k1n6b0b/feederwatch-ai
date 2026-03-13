@@ -2,7 +2,7 @@
 # HA Supervisor renders this options schema as a GUI form — no file editing needed.
 
 name: FeederWatch AI
-version: "0.1.3"
+version: "0.2.0-alpha.1"
 slug: feederwatch_ai
 description: AI-powered bird species identification at your feeder via Frigate NVR
 url: https://github.com/k1n6b0b/feederwatch-ai

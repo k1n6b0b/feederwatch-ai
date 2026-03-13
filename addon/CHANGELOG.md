@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.0-alpha.1
+
+_In development_
+
 ## 0.1.3
 
 ### Bug fixes

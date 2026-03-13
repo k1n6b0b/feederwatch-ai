@@ -265,7 +265,7 @@ async def handle_status(request: web.Request) -> web.Response:
             "size_bytes": db_size,
         },
         "uptime_seconds": int(uptime),
-        "version": "0.1.3",  # keep in sync with addon/config.yaml
+        "version": "0.2.0-alpha.1",  # keep in sync with addon/config.yaml
         "discovery": _discovery_cache,
     })
 
