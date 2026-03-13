@@ -39,7 +39,6 @@ MQTT_HEARTBEAT_INTERVAL = 60
 
 async def run_status_heartbeat(mqtt_client: MQTTClient) -> None:
     """Publishes feederwatch_ai/status every 60s."""
-    import json
     while True:
         await asyncio.sleep(MQTT_HEARTBEAT_INTERVAL)
         try:

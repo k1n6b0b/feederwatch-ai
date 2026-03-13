@@ -6,8 +6,7 @@ No external dependencies required.
 from __future__ import annotations
 
 import pytest
-import pytest_asyncio
-from datetime import date, datetime, timezone
+from datetime import date
 
 import sys
 import os
@@ -24,7 +23,6 @@ from src.db import (
     get_display_names,
     get_recent_detections,
     get_species_detail,
-    get_species_phenology,
     get_total_detection_count,
     init_db,
     insert_detection,
@@ -228,7 +226,6 @@ async def test_limit_capped_at_100():
 @pytest.mark.asyncio
 async def test_daily_detections_offset_pagination():
     await upsert_species(DB, "Poecile atricapillus", "Black-capped Chickadee")
-    today = date.today().isoformat()
     for i in range(5):
         await insert_detection(DB, f"evt_d{i}", "Poecile atricapillus", "Black-capped Chickadee", 0.9, "ai_classified", "birdcam")
 

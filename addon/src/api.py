@@ -12,12 +12,10 @@ import base64
 import json
 import logging
 import os
-import re
 import tempfile
-from collections.abc import AsyncGenerator
 from datetime import date, datetime, timezone
 from typing import Any
-from urllib.parse import quote, urlparse
+from urllib.parse import quote
 
 import aiohttp
 from aiohttp import web

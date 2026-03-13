@@ -8,7 +8,7 @@ from __future__ import annotations
 import io
 import os
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -91,7 +91,7 @@ def test_classify_sync_returns_top_k():
     classifier._loaded = True
 
     image_bytes = make_jpeg_bytes()
-    arr = classifier._preprocess(image_bytes)
+    classifier._preprocess(image_bytes)
     results = classifier._classify_sync(image_bytes)
 
     assert len(results) <= 5

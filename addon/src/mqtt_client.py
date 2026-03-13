@@ -186,8 +186,6 @@ class MQTTClient:
             self._push_ring(camera, frigate_event_id, None, "error", raw_payload)
             return
 
-        # Extract event ID from topic: frigate/events → split
-        topic_parts = str(message.topic).split("/")
         # Frigate event IDs are in the payload, not the topic
         frigate_event_id = raw_payload.get("after", {}).get("id") or raw_payload.get("before", {}).get("id", "unknown")
 

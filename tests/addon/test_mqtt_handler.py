@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../addon"))
 
-from src.mqtt_client import FrigateEventAfter, FrigateEventPayload, MQTTClient, RingBufferEntry
+from src.mqtt_client import FrigateEventPayload, MQTTClient, RingBufferEntry
 from src.config import Config
 from src.db import init_db
 
