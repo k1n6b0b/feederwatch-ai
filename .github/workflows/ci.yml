@@ -45,8 +45,8 @@ jobs:
           python-version: "3.12"
       - name: Install bandit
         run: pip install bandit
-      - name: SAST — bandit (medium severity+, skip assert-noise)
-        run: bandit -r addon/src/ -ll --skip B101
+      - name: SAST — bandit (medium severity+, medium confidence+, skip assert-noise)
+        run: bandit -r addon/src/ -ll -ii --skip B101
 
   # ── 3. Frontend dependency audit ────────────────────────────────────────
   frontend-security:
