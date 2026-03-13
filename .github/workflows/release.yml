@@ -8,7 +8,6 @@ on:
 permissions:
   contents: read
   packages: write          # push to GHCR
-  security-events: write   # upload Trivy SARIF to GitHub Security tab
 
 jobs:
   build-and-push:
@@ -48,17 +47,12 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
       - name: Scan released image with Trivy
-        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2  # 0.28.0
-        with:
-          image-ref: ghcr.io/${{ github.repository_owner }}/feederwatch-ai:${{ steps.meta.outputs.version }}
-          format: sarif
-          output: trivy-results.sarif
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-
-      - name: Upload Trivy SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@820e3160e279568db735cee8ed8f8e77a6da7818  # v3
-        if: always()
-        with:
-          sarif_file: trivy-results.sarif
+        run: |
+          trivy image ghcr.io/${{ github.repository_owner }}/feederwatch-ai:${{ steps.meta.outputs.version }} \
+            --severity CRITICAL,HIGH \
+            --ignore-unfixed \
+            --exit-code 1
