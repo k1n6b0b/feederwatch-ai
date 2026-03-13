@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.2
+## 0.1.2-alpha.1
 
 ### Bug fixes
 - Common names now shown everywhere (cards, modals, gallery) — existing rows backfilled at startup
