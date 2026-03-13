@@ -125,9 +125,20 @@ function SkeletonGrid() {
 }
 
 function EmptyState({ search }: { search: string }) {
+  if (search) {
+    return (
+      <div className="text-center py-16 text-slate-500">
+        No species matching &ldquo;{search}&rdquo;
+      </div>
+    )
+  }
   return (
-    <div className="text-center py-16 text-slate-500">
-      {search ? `No species matching "${search}"` : 'No species detected yet'}
+    <div className="flex flex-col items-center justify-center py-24 text-center">
+      <span className="text-5xl mb-4" aria-hidden>🪶</span>
+      <h2 className="text-slate-400 font-medium mb-1">No species detected yet</h2>
+      <p className="text-slate-600 text-sm max-w-xs">
+        Detections will appear here once birds visit your feeder.
+      </p>
     </div>
   )
 }

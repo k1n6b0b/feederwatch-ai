@@ -6,12 +6,24 @@ AI-powered bird species identification for Home Assistant, using your Frigate NV
 
 ---
 
+## Screenshots
+
+| Live Feed | Species Gallery |
+|-----------|-----------------|
+| ![Live Feed](screenshots/FeederWatch%20AI%20-%20Feed%20v0.1.2-alpha1.png) | ![Gallery](screenshots/FeederWatch%20AI%20-%20Gallery%20v0.1.2-alpha1.png) |
+
+| Daily Summary | Connection Status |
+|---------------|-------------------|
+| ![Daily](screenshots/FeederWatch%20AI%20-%20Daily%20v0.1.2-alpha1.png) | ![Connection Status](screenshots/FeederWatch%20AI%20-%20Connection%20Status%20v0.1.2-alpha1.png) |
+
+---
+
 ## How it works
 
 Frigate detects motion → FeederWatch AI classifies the bird → species appears in your HA dashboard with snapshot, confidence score, and AllAboutBirds link.
 
 ```
-Frigate NVR ──MQTT──► FeederWatch AI Add-on ──► SQLite DB + Web UI
+Frigate NVR ──MQTT──► FeederWatch AI add-on ──► SQLite DB + Web UI
                                 │
                                 └──MQTT──► HA HACS Integration (sensors, notifications)
 ```
@@ -46,14 +58,16 @@ Search for **FeederWatch AI** and install.
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `frigate_url` | URL of your Frigate instance | `http://frigate:5000` |
+| `frigate_api_url` | Internal URL for Frigate API calls | `http://frigate:5000` |
+| `frigate_clips_ui_url` | Browser-accessible Frigate URL for clip links (optional) | — |
 | `mqtt_host` | MQTT broker hostname | `homeassistant.local` |
 | `mqtt_port` | MQTT broker port | `1883` |
 | `mqtt_username` | MQTT username (optional) | — |
 | `mqtt_password` | MQTT password (optional) | — |
-| `camera_names` | List of Frigate camera names to monitor | `["birdcam"]` |
+| `camera_names` | Frigate camera names to monitor | `["birdcam"]` |
 | `classification_threshold` | Minimum confidence to save a detection (0.1–1.0) | `0.7` |
 | `store_snapshots` | Save bird snapshots locally | `true` |
+| `mqtt_publish_topic` | Base topic prefix for published detection events | `feederwatch_ai` |
 
 ### 4. Start
 
@@ -79,6 +93,26 @@ The HACS integration will surface HA entities:
 - `binary_sensor.classified_bird_present` + per-species sensors
 - `sensor.bird_species_count`, `sensor.total_detections`
 - HA notifications for new detections and first-ever species
+
+---
+
+## MQTT topics
+
+All detection events are published under the configured `mqtt_publish_topic` prefix (default: `feederwatch_ai`):
+
+| Topic | Payload | When |
+|-------|---------|------|
+| `{base}/detection` | Full detection JSON | Every detection |
+| `{base}/detections` | Full detection JSON | Every detection |
+| `{base}/detections/common_name` | Common name string | Every detection |
+| `{base}/detections/scientific_name` | Scientific name string | Every detection |
+| `{base}/detections/score` | Confidence score string | Every detection |
+| `{base}/detections/camera` | Camera name string | Every detection |
+| `{base}/new_species` | Full JSON (retained) | First-ever species only |
+| `{base}/new_species/common_name` | Common name (retained) | First-ever species only |
+| `{base}/new_species/scientific_name` | Scientific name (retained) | First-ever species only |
+
+Set `mqtt_publish_topic: whosatmyfeeder` to publish under the WhosAtMyFeeder topic prefix for backward compatibility with existing automations.
 
 ---
 

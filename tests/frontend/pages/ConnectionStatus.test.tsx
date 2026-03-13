@@ -157,13 +157,14 @@ describe('ConnectionStatus page', () => {
     wrapper(<ConnectionStatus />)
     await waitFor(() => {
       expect(screen.getByText('front_yard')).toBeInTheDocument()
-      expect(screen.getByText('AI saved')).toBeInTheDocument()
+      // B-4: action label for saved_ai is now "AI" (not "AI saved")
+      expect(screen.getByText('AI')).toBeInTheDocument()
       expect(screen.getByText('87%')).toBeInTheDocument()
       expect(screen.getByText('70%')).toBeInTheDocument()
     })
   })
 
-  it('shows all action types in ring buffer', async () => {
+  it('shows all action types in ring buffer (B-4: labels are AI / Frigate)', async () => {
     const entries: MqttRingEntry[] = [
       makeRingEntry('saved_ai'),
       makeRingEntry('saved_frigate'),
@@ -175,11 +176,16 @@ describe('ConnectionStatus page', () => {
     vi.mocked(eventsApi.recent).mockResolvedValue(entries)
     wrapper(<ConnectionStatus />)
     await waitFor(() => {
-      expect(screen.getByText('AI saved')).toBeInTheDocument()
-      expect(screen.getByText('Frigate saved')).toBeInTheDocument()
+      // "AI" is the action label for saved_ai; "AI Model" is the service row — no collision
+      expect(screen.getByText('AI')).toBeInTheDocument()
+      // "Frigate" appears both as a service row label and as the saved_frigate action label
+      expect(screen.getAllByText('Frigate').length).toBeGreaterThanOrEqual(2)
       expect(screen.getByText('Below threshold')).toBeInTheDocument()
       expect(screen.getByText('No bird')).toBeInTheDocument()
       expect(screen.getByText('Error')).toBeInTheDocument()
+      // Old labels must not appear
+      expect(screen.queryByText('AI saved')).toBeNull()
+      expect(screen.queryByText('Frigate saved')).toBeNull()
     })
   })
 

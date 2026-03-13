@@ -1,8 +1,25 @@
 # Changelog
 
-## 0.1.3-alpha.1
+## 0.1.3
 
-_In development_
+### Bug fixes
+
+- Feed card names now update immediately after reclassify (no stale common/scientific name on the card)
+- Feed and Gallery now update immediately after WAMF import without requiring a force-refresh
+- Feed re-seeds from API when a bulk change is signalled via SSE refresh sentinel
+- Gallery empty state matches Feed style (feather icon + subtitle)
+- Connection status: action labels shortened to "AI" / "Frigate"
+
+### Configuration
+
+- New `mqtt_publish_topic` config field (default: `feederwatch_ai`) — controls the MQTT topic prefix for all published detection events; set to `whosatmyfeeder` for backward compat with existing WhosAtMyFeeder automations
+- All detection events published under `{base}/detection`, `{base}/detections` (full JSON + subtopics), and `{base}/new_species` (first-ever, retained)
+
+### Documentation
+
+- Screenshots added to README
+- README config table updated with current options (`frigate_api_url`, `mqtt_publish_topic`)
+- MQTT topic reference table added to README
 
 ## 0.1.2
 

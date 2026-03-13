@@ -492,3 +492,149 @@ def test_ring_buffer_max_size():
         )
 
     assert len(client._ring_buffer) == RING_BUFFER_SIZE
+
+
+# ---------------------------------------------------------------------------
+# mqtt_publish_topic config + _publish_detection topic prefix (M-1, M-2)
+# ---------------------------------------------------------------------------
+
+def test_config_default_mqtt_publish_topic():
+    """Config defaults mqtt_publish_topic to 'feederwatch_ai'."""
+    cfg = Config(frigate_api_url="http://frigate:5000", mqtt_host="localhost")
+    assert cfg.mqtt_publish_topic == "feederwatch_ai"
+
+
+def test_config_custom_mqtt_publish_topic():
+    """Config accepts a custom mqtt_publish_topic."""
+    cfg = Config(
+        frigate_api_url="http://frigate:5000",
+        mqtt_host="localhost",
+        mqtt_publish_topic="whosatmyfeeder",
+    )
+    assert cfg.mqtt_publish_topic == "whosatmyfeeder"
+
+
+@pytest.mark.asyncio
+async def test_publish_detection_uses_configured_topic_prefix(tmp_path):
+    """_publish_detection must publish under the configured mqtt_publish_topic prefix."""
+    from src.config import Config
+
+    cfg = Config(
+        frigate_api_url="http://frigate:5000",
+        mqtt_host="localhost",
+        mqtt_publish_topic="mybird",
+    )
+    client = MQTTClient(
+        config=cfg,
+        classifier=MagicMock(),
+        label_mapper=MagicMock(),
+        db_path=str(tmp_path / "test.db"),
+    )
+
+    mock_client = AsyncMock()
+    detection = {
+        "id": 1,
+        "frigate_event_id": "evt_123",
+        "scientific_name": "Poecile atricapillus",
+        "common_name": "Black-capped Chickadee",
+        "score": 0.95,
+        "category_name": "ai_classified",
+        "camera_name": "birdcam",
+        "snapshot_path": None,
+        "detected_at": "2024-01-01T12:00:00",
+        "is_first_ever": False,
+    }
+
+    await client._publish_detection(mock_client, detection, first_ever=False)
+
+    published_topics = [call.args[0] for call in mock_client.publish.call_args_list]
+    assert any(t.startswith("mybird/") for t in published_topics), \
+        f"Expected topics under 'mybird/' prefix, got: {published_topics}"
+    assert not any(t.startswith("feederwatch_ai/") for t in published_topics), \
+        "Should not publish under default prefix when custom topic is set"
+    assert not any(t.startswith("whosatmyfeeder/") for t in published_topics), \
+        "Should not publish under WAMF prefix"
+
+
+@pytest.mark.asyncio
+async def test_publish_detection_includes_subtopics(tmp_path):
+    """_publish_detection publishes full JSON + subtopics under detections/ prefix."""
+    from src.config import Config
+
+    cfg = Config(
+        frigate_api_url="http://frigate:5000",
+        mqtt_host="localhost",
+        mqtt_publish_topic="feederwatch_ai",
+    )
+    client = MQTTClient(
+        config=cfg,
+        classifier=MagicMock(),
+        label_mapper=MagicMock(),
+        db_path=str(tmp_path / "test.db"),
+    )
+
+    mock_client = AsyncMock()
+    detection = {
+        "id": 1,
+        "frigate_event_id": "evt_abc",
+        "scientific_name": "Poecile atricapillus",
+        "common_name": "Black-capped Chickadee",
+        "score": 0.95,
+        "category_name": "ai_classified",
+        "camera_name": "birdcam",
+        "snapshot_path": None,
+        "detected_at": "2024-01-01T12:00:00",
+        "is_first_ever": False,
+    }
+
+    await client._publish_detection(mock_client, detection, first_ever=False)
+
+    published = {call.args[0]: call.args[1] for call in mock_client.publish.call_args_list}
+    assert "feederwatch_ai/detection" in published
+    assert "feederwatch_ai/detections" in published
+    assert "feederwatch_ai/detections/common_name" in published
+    assert "feederwatch_ai/detections/scientific_name" in published
+    assert "feederwatch_ai/detections/camera" in published
+    assert published["feederwatch_ai/detections/common_name"] == "Black-capped Chickadee"
+    assert published["feederwatch_ai/detections/scientific_name"] == "Poecile atricapillus"
+    # new_species topics must NOT appear when first_ever=False
+    assert not any("new_species" in t for t in published)
+
+
+@pytest.mark.asyncio
+async def test_publish_detection_new_species_topics_on_first_ever(tmp_path):
+    """_publish_detection publishes retained new_species topics when first_ever=True."""
+    from src.config import Config
+
+    cfg = Config(
+        frigate_api_url="http://frigate:5000",
+        mqtt_host="localhost",
+        mqtt_publish_topic="feederwatch_ai",
+    )
+    client = MQTTClient(
+        config=cfg,
+        classifier=MagicMock(),
+        label_mapper=MagicMock(),
+        db_path=str(tmp_path / "test.db"),
+    )
+
+    mock_client = AsyncMock()
+    detection = {
+        "id": 2,
+        "frigate_event_id": "evt_first",
+        "scientific_name": "Turdus migratorius",
+        "common_name": "American Robin",
+        "score": 0.91,
+        "category_name": "ai_classified",
+        "camera_name": "birdcam",
+        "snapshot_path": None,
+        "detected_at": "2024-01-01T12:00:00",
+        "is_first_ever": True,
+    }
+
+    await client._publish_detection(mock_client, detection, first_ever=True)
+
+    published = {call.args[0]: call.args[1] for call in mock_client.publish.call_args_list}
+    assert "feederwatch_ai/new_species" in published
+    assert "feederwatch_ai/new_species/common_name" in published
+    assert published["feederwatch_ai/new_species/common_name"] == "American Robin"

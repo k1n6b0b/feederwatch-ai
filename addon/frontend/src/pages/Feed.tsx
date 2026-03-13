@@ -8,7 +8,7 @@ const COLUMNS = 3
 const CARD_HEIGHT = 280 // approximate px per row
 
 export default function Feed() {
-  const { detections, streamState, removeDetection } = useDetectionStream()
+  const { detections, streamState, removeDetection, updateDetection } = useDetectionStream()
   const { data: statusData } = useStatus()
   const parentRef = useRef<HTMLDivElement>(null)
 
@@ -78,6 +78,7 @@ export default function Feed() {
                       detection={detection}
                       isNew={virtualRow.index === 0 && colIdx === 0}
                       onRemove={removeDetection}
+                      onUpdate={updateDetection}
                     />
                   ))}
                 </div>

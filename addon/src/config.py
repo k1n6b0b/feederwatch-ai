@@ -34,6 +34,7 @@ class Config:
     bird_present_timeout_minutes: int = 5
     frigate_topic: str = "frigate"
     frigate_clips_ui_url: str | None = None
+    mqtt_publish_topic: str = "feederwatch_ai"
 
     def masked_password(self) -> str | None:
         return "***" if self.mqtt_password else None
@@ -84,6 +85,7 @@ def load_config() -> Config:
         bird_present_timeout_minutes=int(data.get("bird_present_timeout_minutes", 5)),
         frigate_topic=data.get("frigate_topic", "frigate"),
         frigate_clips_ui_url=raw_clips_ui_url,
+        mqtt_publish_topic=data.get("mqtt_publish_topic") or "feederwatch_ai",
     )
 
     _LOGGER.info(

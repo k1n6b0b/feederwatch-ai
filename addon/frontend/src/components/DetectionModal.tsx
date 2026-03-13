@@ -9,6 +9,7 @@ interface DetectionModalProps {
   onClose: () => void
   onRemove?: (id: number) => void
   onReclassifySuccess?: (speciesDeleted: boolean) => void
+  onUpdate?: (id: number, patches: Partial<Detection>) => void
 }
 
 function SourceBadge({ detection }: { detection: Detection }) {
@@ -132,6 +133,7 @@ export default function DetectionModal({
   onClose,
   onRemove,
   onReclassifySuccess,
+  onUpdate,
 }: DetectionModalProps) {
   const backdropRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
@@ -178,15 +180,16 @@ export default function DetectionModal({
   }
 
   function handleReclassifySuccess(scientificName: string, commonName: string, speciesDeleted: boolean) {
-    setCurrentDetection(d => ({
-      ...d,
+    const patches: Partial<Detection> = {
       scientific_name: scientificName,
       common_name: commonName,
       category_name: 'human_reclassified',
-    }))
+    }
+    setCurrentDetection(d => ({ ...d, ...patches }))
     setShowReclassify(false)
     queryClient.invalidateQueries({ queryKey: ['detections'] })
     queryClient.invalidateQueries({ queryKey: ['species'] })
+    onUpdate?.(detection.id, patches)
     onReclassifySuccess?.(speciesDeleted)
   }
 

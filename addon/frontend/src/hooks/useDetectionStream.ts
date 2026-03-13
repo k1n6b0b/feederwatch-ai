@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { detections as detectionsApi } from '../api/client'
 import type { Detection } from '../types/api'
 
@@ -22,6 +22,7 @@ export function useDetectionStream() {
   const eventSourceRef = useRef<EventSource | null>(null)
   const retryCountRef = useRef(0)
   const pollingRef = useRef(false)
+  const queryClient = useQueryClient()
 
   const prependDetection = useCallback((detection: Detection) => {
     setDetections(prev => {
@@ -62,8 +63,15 @@ export function useDetectionStream() {
 
     es.onmessage = (event) => {
       try {
-        const detection = JSON.parse(event.data) as Detection
-        prependDetection(detection)
+        const data = JSON.parse(event.data)
+        if (data.type === 'refresh') {
+          // WAMF import or other bulk change — invalidate cache and re-seed local state
+          queryClient.invalidateQueries({ queryKey: ['detections', 'recent', 'initial'] })
+          queryClient.invalidateQueries({ queryKey: ['species'] })
+          detectionsApi.recent(20).then(fresh => setDetections(fresh)).catch(() => {})
+          return
+        }
+        prependDetection(data as Detection)
       } catch {
         // Ignore malformed SSE data
       }
@@ -83,7 +91,7 @@ export function useDetectionStream() {
         setTimeout(connectSSE, delay)
       }
     }
-  }, [prependDetection])
+  }, [prependDetection, queryClient])
 
   // Polling fallback
   const { data: pollData } = useQuery({
@@ -111,5 +119,9 @@ export function useDetectionStream() {
     setDetections(prev => prev.filter(d => d.id !== id))
   }, [])
 
-  return { detections, streamState, prependDetection, removeDetection }
+  const updateDetection = useCallback((id: number, patches: Partial<Detection>) => {
+    setDetections(prev => prev.map(d => d.id === id ? { ...d, ...patches } : d))
+  }, [])
+
+  return { detections, streamState, prependDetection, removeDetection, updateDetection }
 }

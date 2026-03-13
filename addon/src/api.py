@@ -265,7 +265,7 @@ async def handle_status(request: web.Request) -> web.Response:
             "size_bytes": db_size,
         },
         "uptime_seconds": int(uptime),
-        "version": "0.1.3-alpha.1",  # keep in sync with addon/config.yaml
+        "version": "0.1.3",  # keep in sync with addon/config.yaml
         "discovery": _discovery_cache,
     })
 
@@ -600,6 +600,8 @@ async def handle_import_wamf(request: web.Request) -> web.Response:
         db_path: str = request.app["db_path"]
         result = await migrate_wamf(tmp_path, db_path)
         _LOGGER.info("WAMF import complete: %s", result)
+        # Signal SSE subscribers to refresh their local state
+        await broadcast_detection(request.app, {"type": "refresh"})
         return _json_response(result)
     except web.HTTPException:
         raise

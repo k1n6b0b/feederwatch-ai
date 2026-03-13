@@ -426,32 +426,35 @@ class MQTTClient:
         common_name = detection["common_name"]
         scientific_name = detection["scientific_name"]
         score = detection.get("score") or 0
+        base = self._config.mqtt_publish_topic
+        detection_payload = json.dumps(detection)
 
         try:
-            # WAMF backward-compat topics
-            await client.publish("whosatmyfeeder/detections", common_name, retain=False)
+            # Full detection JSON — every detection
+            await client.publish(f"{base}/detection", detection_payload, retain=False)
+
+            # Full detection JSON + subtopics — every detection
+            await client.publish(f"{base}/detections", detection_payload, retain=False)
+            await client.publish(f"{base}/detections/common_name", common_name, retain=False)
+            await client.publish(f"{base}/detections/scientific_name", scientific_name, retain=False)
+            await client.publish(f"{base}/detections/score", str(score), retain=False)
+            await client.publish(f"{base}/detections/camera", detection["camera_name"], retain=False)
+            await client.publish(f"{base}/detections/frigate_event", detection["frigate_event_id"], retain=False)
 
             if first_ever:
-                payload = json.dumps({
+                first_ever_payload = json.dumps({
                     "common_name": common_name,
                     "scientific_name": scientific_name,
                     "score": score,
                     "camera": detection["camera_name"],
                     "frigate_event": detection["frigate_event_id"],
                 })
-                await client.publish("whosatmyfeeder/new_species", payload, retain=True)
-                await client.publish("whosatmyfeeder/new_species/common_name", common_name, retain=True)
-                await client.publish("whosatmyfeeder/new_species/scientific_name", scientific_name, retain=True)
-                await client.publish("whosatmyfeeder/new_species/score", str(score), retain=True)
-                await client.publish("whosatmyfeeder/new_species/camera", detection["camera_name"], retain=True)
-                await client.publish("whosatmyfeeder/new_species/frigate_event", detection["frigate_event_id"], retain=True)
-
-            # New FeederWatch AI topics
-            await client.publish(
-                "feederwatch_ai/detection",
-                json.dumps(detection),
-                retain=False,
-            )
+                await client.publish(f"{base}/new_species", first_ever_payload, retain=True)
+                await client.publish(f"{base}/new_species/common_name", common_name, retain=True)
+                await client.publish(f"{base}/new_species/scientific_name", scientific_name, retain=True)
+                await client.publish(f"{base}/new_species/score", str(score), retain=True)
+                await client.publish(f"{base}/new_species/camera", detection["camera_name"], retain=True)
+                await client.publish(f"{base}/new_species/frigate_event", detection["frigate_event_id"], retain=True)
         except Exception as exc:
             _LOGGER.warning("MQTT publish error: %s", exc)
 

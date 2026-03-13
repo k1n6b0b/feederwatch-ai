@@ -92,6 +92,12 @@ describe('DetectionCard', () => {
     expect(screen.getByText('American Robin')).toBeInTheDocument()
   })
 
+  it('accepts onUpdate prop without error (B-1)', () => {
+    const onUpdate = vi.fn()
+    wrapper(<DetectionCard detection={makeDetection()} onUpdate={onUpdate} />)
+    expect(screen.getByText('American Robin')).toBeInTheDocument()
+  })
+
   it('renders first-ever badge when is_first_ever=true', () => {
     wrapper(<DetectionCard detection={makeDetection({ is_first_ever: true })} />)
     expect(screen.getByText(/First ever/i)).toBeInTheDocument()

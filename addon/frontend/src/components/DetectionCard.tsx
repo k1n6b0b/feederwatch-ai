@@ -9,6 +9,7 @@ interface DetectionCardProps {
   detection: Detection
   isNew?: boolean
   onRemove?: (id: number) => void
+  onUpdate?: (id: number, patches: Partial<Detection>) => void
 }
 
 
@@ -31,7 +32,7 @@ function RelativeTime({ isoString }: { isoString: string }) {
   )
 }
 
-export default function DetectionCard({ detection, isNew = false, onRemove }: DetectionCardProps) {
+export default function DetectionCard({ detection, isNew = false, onRemove, onUpdate }: DetectionCardProps) {
   const [imgFailed, setImgFailed] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
@@ -163,6 +164,7 @@ export default function DetectionCard({ detection, isNew = false, onRemove }: De
           frigateBaseUrl={statusData?.frigate.clips_ui_url ?? ''}
           onClose={() => setModalOpen(false)}
           onRemove={onRemove}
+          onUpdate={onUpdate}
         />
       )}
     </>

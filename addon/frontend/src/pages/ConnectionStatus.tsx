@@ -6,7 +6,7 @@
 
 import { useRef, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { admin, status as statusApi, events as eventsApi } from '../api/client'
 import type { MqttRingEntry, StatusResponse } from '../types/api'
 
@@ -40,8 +40,8 @@ const ACTION_STYLES: Record<MqttRingEntry['action'], string> = {
 }
 
 const ACTION_LABELS: Record<MqttRingEntry['action'], string> = {
-  saved_ai:         'AI saved',
-  saved_frigate:    'Frigate saved',
+  saved_ai:         'AI',
+  saved_frigate:    'Frigate',
   below_threshold:  'Below threshold',
   no_bird:          'No bird',
   error:            'Error',
@@ -201,6 +201,7 @@ function WamfImportCard() {
   const [errorMsg, setErrorMsg] = useState('')
   const [open, setOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const queryClient = useQueryClient()
 
   async function handleFile(file: File) {
     setState('uploading')
@@ -212,6 +213,11 @@ function WamfImportCard() {
       const data = await admin.importWamf(file.name, b64)
       setResult(data)
       setState('done')
+      // Invalidate Feed and Gallery caches so imported data is visible without a force-refresh.
+      // The SSE refresh sentinel only reaches subscribers on the Feed page; these invalidations
+      // cover the case where the user imports from ConnectionStatus (no SSE subscriber active).
+      queryClient.invalidateQueries({ queryKey: ['detections', 'recent', 'initial'] })
+      queryClient.invalidateQueries({ queryKey: ['species'] })
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : String(err))
       setState('error')

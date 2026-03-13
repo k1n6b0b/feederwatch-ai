@@ -390,6 +390,38 @@ async def test_import_wamf_not_json(client):
     assert resp.status == 400
 
 
+@pytest.mark.asyncio
+async def test_import_wamf_broadcasts_refresh_sentinel(client):
+    """After a successful WAMF import, a {type: refresh} SSE sentinel is broadcast."""
+    import asyncio
+    c, _ = client
+
+    # Register a fake SSE subscriber queue before the import
+    refresh_queue: asyncio.Queue = asyncio.Queue()
+    c.app["sse_subscribers"].append(refresh_queue)
+
+    fake_bytes = b"SQLite format 3\x00" + b"\x00" * 100
+    b64 = base64.b64encode(fake_bytes).decode()
+    try:
+        with patch("src.migrate_wamf.migrate_wamf", new_callable=AsyncMock) as mock_migrate:
+            mock_migrate.return_value = {"imported": 3, "skipped": 0}
+            resp = await c.post(
+                "/api/v1/admin/import-wamf",
+                json={"filename": "speciesid.db", "data": b64},
+            )
+        assert resp.status == 200
+
+        # Queue should have received the refresh sentinel
+        assert not refresh_queue.empty(), "Refresh sentinel was not broadcast to SSE subscribers"
+        sentinel = refresh_queue.get_nowait()
+        assert sentinel == {"type": "refresh"}
+    finally:
+        try:
+            c.app["sse_subscribers"].remove(refresh_queue)
+        except ValueError:
+            pass
+
+
 # ---------------------------------------------------------------------------
 # Security headers
 # ---------------------------------------------------------------------------

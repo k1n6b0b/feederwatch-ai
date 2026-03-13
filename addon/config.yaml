@@ -2,7 +2,7 @@
 # HA Supervisor renders this options schema as a GUI form — no file editing needed.
 
 name: FeederWatch AI
-version: "0.1.3-alpha.1"
+version: "0.1.3"
 slug: feederwatch_ai
 description: AI-powered bird species identification at your feeder via Frigate NVR
 url: https://github.com/k1n6b0b/feederwatch-ai
@@ -34,6 +34,11 @@ options:
   # MQTT topic prefix Frigate publishes events to (rarely needs changing).
   frigate_topic: "frigate"
 
+  # Base topic prefix for all detection events published by this add-on.
+  # Default: feederwatch_ai  (publishes to feederwatch_ai/detections, feederwatch_ai/new_species, etc.)
+  # Set to "whosatmyfeeder" if you have existing HA automations built for WhosAtMyFeeder.
+  mqtt_publish_topic: "feederwatch_ai"
+
   # --- MQTT broker ---
   mqtt_host: "homeassistant.local"
   mqtt_port: 1883
@@ -58,6 +63,7 @@ schema:
   frigate_api_url: str
   frigate_clips_ui_url: str?
   frigate_topic: str
+  mqtt_publish_topic: str?
   mqtt_host: str
   mqtt_port: int(1,65535)
   mqtt_username: str?
