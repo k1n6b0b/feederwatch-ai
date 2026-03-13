@@ -1,3 +1,4 @@
 channel: stable
-addons:
-  - addon
+name: FeederWatch AI
+url: https://github.com/k1n6b0b/feederwatch-ai
+maintainer: k1n6b0b
