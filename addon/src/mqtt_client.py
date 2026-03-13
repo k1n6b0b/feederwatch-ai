@@ -108,6 +108,9 @@ class MQTTClient:
         self._on_presence = on_presence_callback
         self._ring_buffer: deque[RingBufferEntry] = deque(maxlen=RING_BUFFER_SIZE)
         self._presence = PresenceState()
+        # In-memory dedup: events fully saved; events tried with no sub_label yet
+        self._event_done: set[str] = set()
+        self._event_no_sublabel: set[str] = set()
         self._running = False
         self._connected = False
         self._last_error: str | None = None
@@ -227,8 +230,15 @@ class MQTTClient:
         if after.label != "bird":
             return
 
-        # Skip duplicates
+        # Skip events we already saved (in-memory fast path, then DB fallback)
+        if frigate_event_id in self._event_done:
+            return
         if await detection_exists(self._db_path, frigate_event_id):
+            self._event_done.add(frigate_event_id)
+            return
+
+        # If we already classified this event with no sub_label and it still has none, skip
+        if frigate_event_id in self._event_no_sublabel and after.sub_label is None:
             return
 
         await self._classify_and_store(
@@ -274,12 +284,15 @@ class MQTTClient:
             self._push_ring(camera, frigate_event_id, our_score, "error", raw_payload)
             return
 
-        # Frigate sublabel fallback
+        # Frigate sublabel fallback — translate common name to scientific name
         if scientific_name is None and sub_label:
-            scientific_name = sub_label
+            from .bird_names import get_scientific_name as _common_to_sci
+            scientific_name = _common_to_sci(sub_label) or sub_label
             category = "frigate_classified"
             our_score = None
-            _LOGGER.debug("Using Frigate sublabel fallback: %s", sub_label)
+            _LOGGER.debug(
+                "Using Frigate sublabel fallback: %s → %s", sub_label, scientific_name
+            )
 
         if scientific_name is None:
             action = "below_threshold" if our_score is not None else "no_bird"
@@ -288,6 +301,9 @@ class MQTTClient:
                 frigate_event_id, our_score, threshold,
             )
             self._push_ring(camera, frigate_event_id, our_score, action, raw_payload)
+            # Track that we tried without a sub_label so we can skip until one appears
+            if sub_label is None:
+                self._event_no_sublabel.add(frigate_event_id)
             return
 
         # Look up common name from baked-in dict (no DB round-trip)
@@ -351,10 +367,17 @@ class MQTTClient:
         if self._on_presence:
             await self._on_presence(scientific_name, True)
 
+        # Mark event as fully processed so subsequent updates are skipped
+        self._event_done.add(frigate_event_id)
+        self._event_no_sublabel.discard(frigate_event_id)
+
         action = f"saved_{category.split('_')[0]}"
         self._push_ring(camera, frigate_event_id, our_score, action, raw_payload)
 
     async def _handle_event_end(self, frigate_event_id: str, raw_payload: dict) -> None:
+        # Free dedup memory when the event is fully closed
+        self._event_done.discard(frigate_event_id)
+        self._event_no_sublabel.discard(frigate_event_id)
         scientific_name = self._presence.active_events.pop(frigate_event_id, None)
         if scientific_name and self._on_presence:
             # Only mark absent if no other active event for this species

@@ -94,13 +94,6 @@ export default function DetectionCard({ detection, isNew = false, onRemove }: De
             {detection.is_first_ever && (
               <span className="absolute top-2 right-2 badge badge-new">⭐ First ever!</span>
             )}
-            {/* Frigate classified amber dot */}
-            {isFrigateClassified && (
-              <span
-                className="absolute top-2 left-2 w-2 h-2 rounded-full bg-amber-400"
-                title="Frigate sublabel classification"
-              />
-            )}
             {/* Trash icon on hover */}
             <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
               {!detection.is_first_ever && (

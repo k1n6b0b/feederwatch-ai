@@ -249,6 +249,225 @@ def test_snapshot_id_allows_frigate_format():
     assert not pattern.match("event id with spaces"), "Spaces must be rejected"
 
 
+# ---------------------------------------------------------------------------
+# MQTT in-memory deduplication (B12)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_dedup_event_done_blocks_reprocess(tmp_path):
+    """Once an event is saved, subsequent updates must be silently skipped."""
+    mqtt_client, db_path = make_client(tmp_path)
+    await init_db(db_path)
+
+    mqtt_client._event_done.add("evt_dedup")
+
+    import json
+    payload = {
+        "type": "update",
+        "after": {
+            "camera": "birdcam",
+            "label": "bird",
+            "score": 0.9,
+            "id": "evt_dedup",
+        },
+    }
+    message = MagicMock()
+    message.payload = json.dumps(payload).encode()
+
+    with patch("src.mqtt_client.detection_exists", new_callable=AsyncMock, return_value=False):
+        await mqtt_client._handle_message(message, MagicMock())
+
+    assert len(mqtt_client.ring_buffer) == 0  # skipped without classifying
+
+
+@pytest.mark.asyncio
+async def test_dedup_no_sublabel_set_on_below_threshold(tmp_path):
+    """Below-threshold result with no sub_label adds event to _event_no_sublabel."""
+    mqtt_client, db_path = make_client(tmp_path)
+    await init_db(db_path)
+
+    mqtt_client._classifier.classify = AsyncMock(return_value=[{"class_index": 0, "score": 0.4}])
+    mqtt_client._label_mapper.map_results.return_value = [
+        {"scientific_name": "Poecile atricapillus", "score": 0.4}
+    ]
+
+    import json
+    payload = {
+        "type": "new",
+        "after": {
+            "camera": "birdcam",
+            "label": "bird",
+            "sub_label": None,
+            "score": 0.4,
+            "id": "evt_below",
+        },
+    }
+    message = MagicMock()
+    message.payload = json.dumps(payload).encode()
+
+    with patch.object(mqtt_client, "_fetch_snapshot", return_value=b"fake"), \
+         patch("src.mqtt_client.detection_exists", new_callable=AsyncMock, return_value=False):
+        await mqtt_client._handle_message(message, MagicMock())
+
+    assert "evt_below" in mqtt_client._event_no_sublabel
+    assert "evt_below" not in mqtt_client._event_done
+
+
+@pytest.mark.asyncio
+async def test_dedup_no_sublabel_skips_repeat_without_sublabel(tmp_path):
+    """Second update with no sub_label for same event must be skipped."""
+    mqtt_client, db_path = make_client(tmp_path)
+    await init_db(db_path)
+
+    mqtt_client._event_no_sublabel.add("evt_repeat")
+
+    import json
+    payload = {
+        "type": "update",
+        "after": {
+            "camera": "birdcam",
+            "label": "bird",
+            "sub_label": None,
+            "score": 0.4,
+            "id": "evt_repeat",
+        },
+    }
+    message = MagicMock()
+    message.payload = json.dumps(payload).encode()
+
+    with patch("src.mqtt_client.detection_exists", new_callable=AsyncMock, return_value=False):
+        await mqtt_client._handle_message(message, MagicMock())
+
+    assert len(mqtt_client.ring_buffer) == 0  # skipped
+
+
+@pytest.mark.asyncio
+async def test_dedup_allows_retry_when_sublabel_appears(tmp_path):
+    """When sub_label appears for an event previously tried without one, process it."""
+    mqtt_client, db_path = make_client(tmp_path)
+    await init_db(db_path)
+
+    # Previously tried without sub_label
+    mqtt_client._event_no_sublabel.add("evt_sublabel_late")
+
+    mqtt_client._classifier.classify = AsyncMock(return_value=[{"class_index": 0, "score": 0.4}])
+    mqtt_client._label_mapper.map_results.return_value = [
+        {"scientific_name": "Poecile atricapillus", "score": 0.4}
+    ]
+
+    import json
+    payload = {
+        "type": "update",
+        "after": {
+            "camera": "birdcam",
+            "label": "bird",
+            "sub_label": ["House Finch", 0.9],
+            "score": 0.4,
+            "id": "evt_sublabel_late",
+        },
+    }
+    message = MagicMock()
+    message.payload = json.dumps(payload).encode()
+
+    with patch.object(mqtt_client, "_fetch_snapshot", return_value=b"fake"), \
+         patch.object(mqtt_client, "_save_snapshot", new=AsyncMock(return_value=None)), \
+         patch.object(mqtt_client, "_publish_detection", new=AsyncMock()), \
+         patch("src.mqtt_client.upsert_species", new_callable=AsyncMock), \
+         patch("src.mqtt_client.insert_detection", new_callable=AsyncMock, return_value=1), \
+         patch("src.mqtt_client.is_first_ever_species", new_callable=AsyncMock, return_value=False), \
+         patch("src.mqtt_client.detection_exists", new_callable=AsyncMock, return_value=False):
+        await mqtt_client._handle_message(message, MagicMock())
+
+    # Should have been processed (sub_label unblocked it)
+    assert len(mqtt_client.ring_buffer) == 1
+    assert mqtt_client.ring_buffer[0]["action"] == "saved_frigate"
+    assert "evt_sublabel_late" in mqtt_client._event_done
+
+
+@pytest.mark.asyncio
+async def test_dedup_end_event_clears_sets(tmp_path):
+    """End event must remove the event from both dedup sets."""
+    mqtt_client, db_path = make_client(tmp_path)
+    await init_db(db_path)
+
+    mqtt_client._event_done.add("evt_end")
+    mqtt_client._event_no_sublabel.add("evt_end")
+
+    import json
+    payload = {"type": "end", "before": {"id": "evt_end"}}
+    message = MagicMock()
+    message.payload = json.dumps(payload).encode()
+
+    await mqtt_client._handle_message(message, MagicMock())
+
+    assert "evt_end" not in mqtt_client._event_done
+    assert "evt_end" not in mqtt_client._event_no_sublabel
+
+
+# ---------------------------------------------------------------------------
+# Frigate sub_label reverse lookup (B13)
+# ---------------------------------------------------------------------------
+
+def test_reverse_lookup_common_to_scientific():
+    """get_scientific_name returns the scientific name for a known common name."""
+    from src.bird_names import get_scientific_name
+    assert get_scientific_name("House Finch") == "Haemorhous mexicanus"
+    assert get_scientific_name("American Robin") == "Turdus migratorius"
+    assert get_scientific_name("Unknown Species XYZ") is None
+
+
+def test_reverse_lookup_values_are_valid_scientific_names():
+    """Every value in COMMON_TO_SCIENTIFIC must be a key in BIRD_NAMES."""
+    from src.bird_names import BIRD_NAMES, COMMON_TO_SCIENTIFIC
+    for common, sci in COMMON_TO_SCIENTIFIC.items():
+        assert sci in BIRD_NAMES, f"{sci} from reverse lookup not in BIRD_NAMES"
+
+
+@pytest.mark.asyncio
+async def test_sublabel_common_name_stored_as_scientific(tmp_path):
+    """Frigate sub_label 'House Finch' must be stored as 'Haemorhous mexicanus'."""
+    mqtt_client, db_path = make_client(tmp_path)
+    await init_db(db_path)
+
+    # Below threshold so AI classification fails — falls back to sub_label
+    mqtt_client._classifier.classify = AsyncMock(return_value=[{"class_index": 0, "score": 0.4}])
+    mqtt_client._label_mapper.map_results.return_value = [
+        {"scientific_name": "Poecile atricapillus", "score": 0.4}
+    ]
+
+    saved_args: dict = {}
+
+    async def mock_insert(**kwargs):
+        saved_args.update(kwargs)
+        return 1
+
+    import json
+    payload = {
+        "type": "new",
+        "after": {
+            "camera": "birdcam",
+            "label": "bird",
+            "sub_label": ["House Finch", 0.9],
+            "score": 0.4,
+            "id": "evt_hf",
+        },
+    }
+    message = MagicMock()
+    message.payload = json.dumps(payload).encode()
+
+    with patch.object(mqtt_client, "_fetch_snapshot", return_value=b"fake"), \
+         patch.object(mqtt_client, "_save_snapshot", new=AsyncMock(return_value=None)), \
+         patch.object(mqtt_client, "_publish_detection", new=AsyncMock()), \
+         patch("src.mqtt_client.upsert_species", new_callable=AsyncMock), \
+         patch("src.mqtt_client.insert_detection", new_callable=AsyncMock, side_effect=mock_insert), \
+         patch("src.mqtt_client.is_first_ever_species", new_callable=AsyncMock, return_value=False), \
+         patch("src.mqtt_client.detection_exists", new_callable=AsyncMock, return_value=False):
+        await mqtt_client._handle_message(message, MagicMock())
+
+    assert saved_args.get("scientific_name") == "Haemorhous mexicanus"
+    assert saved_args.get("category_name") == "frigate_classified"
+
+
 def test_ring_buffer_max_size():
     from collections import deque
     from src.mqtt_client import RING_BUFFER_SIZE

@@ -76,6 +76,15 @@ describe('DetectionCard', () => {
     expect(screen.queryByText('Frigate')).toBeNull()
   })
 
+  it('does not render amber dot for frigate_classified detections (removed in B11)', () => {
+    const { container } = wrapper(<DetectionCard detection={makeDetection({
+      category_name: 'frigate_classified',
+      score: null,
+    })} />)
+    // Amber dot was: <span class="...bg-amber-400..." title="Frigate sublabel classification">
+    expect(container.querySelector('[title="Frigate sublabel classification"]')).toBeNull()
+  })
+
   it('accepts onRemove prop without error', () => {
     const onRemove = vi.fn()
     // Verifies the prop interface: component renders cleanly when onRemove is provided

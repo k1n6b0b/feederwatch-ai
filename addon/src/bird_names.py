@@ -703,3 +703,12 @@ BIRD_NAMES: dict[str, str] = {
 def get_common_name(scientific_name: str) -> str | None:
     """Return common name for a scientific name, or None if not known."""
     return BIRD_NAMES.get(scientific_name)
+
+
+# Reverse lookup: common_name → scientific_name (built at import time)
+COMMON_TO_SCIENTIFIC: dict[str, str] = {v: k for k, v in BIRD_NAMES.items()}
+
+
+def get_scientific_name(common_name: str) -> str | None:
+    """Return scientific name for a common name, or None if not known."""
+    return COMMON_TO_SCIENTIFIC.get(common_name)

@@ -1,10 +1,12 @@
 import { useParams, useNavigate } from 'react-router-dom'
-import { useEffect } from 'react'
-import { useInfiniteQuery } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
 import { useSpeciesDetail, useSpeciesPhenology } from '../hooks/useSpecies'
 import { aabUrl, detections as detectionsApi, species as speciesApi } from '../api/client'
 import { SpeciesTimeOfDay } from '../components/charts/SpeciesTimeOfDay'
 import { PhenologyCalendar } from '../components/charts/PhenologyCalendar'
+import DetectionModal from '../components/DetectionModal'
+import { useStatus } from '../hooks/useStatus'
 import type { Detection } from '../types/api'
 
 const PAGE_SIZE = 20
@@ -28,11 +30,23 @@ function SpeciesDetailInner({
   scientificName: string
   navigate: ReturnType<typeof useNavigate>
 }) {
+  const [selectedDetection, setSelectedDetection] = useState<Detection | null>(null)
+  const { data: statusData } = useStatus()
+  const queryClient = useQueryClient()
+
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') navigate(-1) }
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (selectedDetection) {
+          setSelectedDetection(null)
+        } else {
+          navigate(-1)
+        }
+      }
+    }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [navigate])
+  }, [navigate, selectedDetection])
 
   const { data: detail, isLoading } = useSpeciesDetail(scientificName)
   const { data: phenology } = useSpeciesPhenology(scientificName)
@@ -131,9 +145,11 @@ function SpeciesDetailInner({
           <h2 className="text-sm font-medium text-slate-300">All photos</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
             {allPhotos.map(d => (
-              <div
+              <button
                 key={d.id}
-                className="aspect-square bg-surface-elevated rounded-lg overflow-hidden"
+                onClick={() => setSelectedDetection(d)}
+                className="aspect-square bg-surface-elevated rounded-lg overflow-hidden hover:ring-1 hover:ring-accent/40 transition-all"
+                aria-label={`View ${detail.common_name} detection from ${new Date(d.detected_at).toLocaleDateString()}`}
               >
                 <img
                   src={detectionsApi.snapshotUrl(d.id)}
@@ -144,7 +160,7 @@ function SpeciesDetailInner({
                     (e.target as HTMLImageElement).style.display = 'none'
                   }}
                 />
-              </div>
+              </button>
             ))}
           </div>
           {hasNextPage && (
@@ -159,6 +175,21 @@ function SpeciesDetailInner({
             </div>
           )}
         </div>
+      )}
+
+      {selectedDetection && (
+        <DetectionModal
+          detection={selectedDetection}
+          frigateBaseUrl={statusData?.frigate.url ?? ''}
+          onClose={() => setSelectedDetection(null)}
+          onRemove={(_id) => {
+            queryClient.invalidateQueries({ queryKey: ['species-detections', scientificName] })
+            queryClient.invalidateQueries({ queryKey: ['species'] })
+            setSelectedDetection(null)
+            // Navigate back if this was the last photo
+            if (allPhotos.length <= 1) navigate(-1)
+          }}
+        />
       )}
     </div>
   )
