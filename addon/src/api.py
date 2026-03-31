@@ -30,6 +30,7 @@ from .db import (
     get_daily_summary,
     get_db_size_bytes,
     get_detection_by_id,
+    get_monthly_recap,
     get_recent_detections,
     get_seasonal_activity,
     get_species_detail,
@@ -154,6 +155,25 @@ class ReclassifyBody(BaseModel):
         v = v.strip()
         if not v:
             raise ValueError("must not be empty")
+        return v
+
+
+class RecapMonthParam(BaseModel):
+    year: int
+    month: int
+
+    @field_validator("year")
+    @classmethod
+    def valid_year(cls, v: int) -> int:
+        if not 1900 <= v <= 2100:
+            raise ValueError("year out of range")
+        return v
+
+    @field_validator("month")
+    @classmethod
+    def valid_month(cls, v: int) -> int:
+        if not 1 <= v <= 12:
+            raise ValueError("month must be 1–12")
         return v
 
 
@@ -505,6 +525,22 @@ async def handle_seasonal_activity(request: web.Request) -> web.Response:
     return _json_response(data)
 
 
+async def handle_monthly_recap(request: web.Request) -> web.Response:
+    """Monthly recap stats for the Recap story page."""
+    try:
+        params = RecapMonthParam(
+            year=int(request.rel_url.query.get("year", 0)),
+            month=int(request.rel_url.query.get("month", 0)),
+        )
+    except (ValueError, ValidationError) as exc:
+        raise web.HTTPBadRequest(
+            reason=f"year and month query params required (e.g. ?year=2026&month=3): {exc}"
+        )
+    db_path: str = request.app["db_path"]
+    data = await get_monthly_recap(db_path, params.year, params.month)
+    return _json_response(data)
+
+
 async def handle_export_csv(request: web.Request) -> web.Response:
     import csv
     import io
@@ -715,6 +751,7 @@ def create_app(
     app.router.add_post("/api/v1/config/threshold", handle_set_threshold)
     app.router.add_get("/api/v1/export/csv", handle_export_csv)
     app.router.add_post("/api/v1/admin/import-wamf", handle_import_wamf)
+    app.router.add_get("/api/v1/recap/monthly", handle_monthly_recap)
 
     # Serve React SPA — all non-API routes serve index.html
     if os.path.isdir(static_path):

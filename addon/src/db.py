@@ -690,6 +690,225 @@ async def get_species_detections(
     return [dict(row) for row in rows]
 
 
+async def get_monthly_recap(db_path: str, year: int, month: int) -> dict[str, Any]:
+    """Aggregated monthly recap stats for the Recap story page.
+
+    Returns a dict with period info, totals, top/rarest species, new species
+    (first-ever sightings this month), peak hour, busiest day, and the
+    detection ID with the best snapshot for a hero image.
+    """
+    import calendar as _calendar
+
+    month_start = f"{year}-{month:02d}-01"
+    if month == 12:
+        month_end = f"{year + 1}-01-01"
+    else:
+        month_end = f"{year}-{month + 1:02d}-01"
+
+    total_days = _calendar.monthrange(year, month)[1]
+
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+
+        # Q1 — totals
+        row = await db.execute_fetchall(
+            """
+            SELECT
+                COUNT(*)                          AS total_visits,
+                COUNT(DISTINCT scientific_name)   AS unique_species,
+                COUNT(DISTINCT date(detected_at)) AS days_with_detections
+            FROM detections
+            WHERE detected_at >= ? AND detected_at < ?
+            """,
+            (month_start, month_end),
+        )
+        totals = dict(row[0]) if row else {}
+        total_visits = totals.get("total_visits", 0) or 0
+
+        if total_visits == 0:
+            return {
+                "period": {
+                    "year": year,
+                    "month": month,
+                    "total_days": total_days,
+                    "days_with_detections": 0,
+                },
+                "total_visits": 0,
+                "unique_species": 0,
+                "top_species": None,
+                "rarest_species": None,
+                "new_species": [],
+                "peak_hour": None,
+                "busiest_day": None,
+                "featured_detection_id": None,
+            }
+
+        # Q2 — top species (most visits)
+        top_rows = await db.execute_fetchall(
+            """
+            SELECT
+                scientific_name,
+                common_name,
+                COUNT(*) AS cnt,
+                (
+                    SELECT id FROM detections d2
+                    WHERE d2.scientific_name = d.scientific_name
+                      AND d2.detected_at >= ? AND d2.detected_at < ?
+                    ORDER BY (d2.snapshot_path IS NOT NULL) DESC,
+                             d2.score DESC NULLS LAST
+                    LIMIT 1
+                ) AS best_detection_id
+            FROM detections d
+            WHERE detected_at >= ? AND detected_at < ?
+            GROUP BY scientific_name
+            ORDER BY cnt DESC
+            LIMIT 1
+            """,
+            (month_start, month_end, month_start, month_end),
+        )
+        top_row = dict(top_rows[0]) if top_rows else None
+        top_species = (
+            {
+                "scientific_name": top_row["scientific_name"],
+                "common_name": top_row["common_name"],
+                "count": top_row["cnt"],
+                "best_detection_id": top_row["best_detection_id"],
+            }
+            if top_row
+            else None
+        )
+
+        # Q3 — rarest species (fewest visits)
+        rare_rows = await db.execute_fetchall(
+            """
+            SELECT
+                scientific_name,
+                common_name,
+                COUNT(*) AS cnt,
+                (
+                    SELECT id FROM detections d2
+                    WHERE d2.scientific_name = d.scientific_name
+                      AND d2.detected_at >= ? AND d2.detected_at < ?
+                    ORDER BY (d2.snapshot_path IS NOT NULL) DESC,
+                             d2.score DESC NULLS LAST
+                    LIMIT 1
+                ) AS best_detection_id
+            FROM detections d
+            WHERE detected_at >= ? AND detected_at < ?
+            GROUP BY scientific_name
+            ORDER BY cnt ASC
+            LIMIT 1
+            """,
+            (month_start, month_end, month_start, month_end),
+        )
+        rare_row = dict(rare_rows[0]) if rare_rows else None
+        rarest_species = (
+            {
+                "scientific_name": rare_row["scientific_name"],
+                "common_name": rare_row["common_name"],
+                "count": rare_row["cnt"],
+                "best_detection_id": rare_row["best_detection_id"],
+            }
+            if rare_row
+            else None
+        )
+
+        # Q4 — new species (global first detection falls within this month)
+        new_rows = await db.execute_fetchall(
+            """
+            SELECT
+                d.scientific_name,
+                d.common_name,
+                MIN(d.detected_at) AS first_seen,
+                (
+                    SELECT id FROM detections d2
+                    WHERE d2.scientific_name = d.scientific_name
+                      AND d2.detected_at >= ? AND d2.detected_at < ?
+                    ORDER BY (d2.snapshot_path IS NOT NULL) DESC,
+                             d2.score DESC NULLS LAST
+                    LIMIT 1
+                ) AS best_detection_id
+            FROM detections d
+            GROUP BY d.scientific_name
+            HAVING MIN(d.detected_at) >= ? AND MIN(d.detected_at) < ?
+            ORDER BY MIN(d.detected_at)
+            """,
+            (month_start, month_end, month_start, month_end),
+        )
+        new_species = [
+            {
+                "scientific_name": r["scientific_name"],
+                "common_name": r["common_name"],
+                "first_seen": r["first_seen"],
+                "best_detection_id": r["best_detection_id"],
+            }
+            for r in new_rows
+        ]
+
+        # Q5 — peak hour
+        peak_rows = await db.execute_fetchall(
+            """
+            SELECT CAST(strftime('%H', detected_at) AS INTEGER) AS hour, COUNT(*) AS cnt
+            FROM detections
+            WHERE detected_at >= ? AND detected_at < ?
+            GROUP BY hour
+            ORDER BY cnt DESC
+            LIMIT 1
+            """,
+            (month_start, month_end),
+        )
+        peak_hour = dict(peak_rows[0])["hour"] if peak_rows else None
+
+        # Q6 — busiest day
+        busiest_rows = await db.execute_fetchall(
+            """
+            SELECT date(detected_at) AS day, COUNT(*) AS cnt
+            FROM detections
+            WHERE detected_at >= ? AND detected_at < ?
+            GROUP BY day
+            ORDER BY cnt DESC
+            LIMIT 1
+            """,
+            (month_start, month_end),
+        )
+        busiest_row = dict(busiest_rows[0]) if busiest_rows else None
+        busiest_day = (
+            {"date": busiest_row["day"], "count": busiest_row["cnt"]}
+            if busiest_row
+            else None
+        )
+
+        # Q7 — featured detection (best score, snapshot preferred)
+        featured_rows = await db.execute_fetchall(
+            """
+            SELECT id FROM detections
+            WHERE detected_at >= ? AND detected_at < ?
+            ORDER BY (snapshot_path IS NOT NULL) DESC,
+                     score DESC NULLS LAST
+            LIMIT 1
+            """,
+            (month_start, month_end),
+        )
+        featured_detection_id = dict(featured_rows[0])["id"] if featured_rows else None
+
+    return {
+        "period": {
+            "year": year,
+            "month": month,
+            "total_days": total_days,
+            "days_with_detections": totals.get("days_with_detections", 0) or 0,
+        },
+        "total_visits": total_visits,
+        "unique_species": totals.get("unique_species", 0) or 0,
+        "top_species": top_species,
+        "rarest_species": rarest_species,
+        "new_species": new_species,
+        "peak_hour": peak_hour,
+        "busiest_day": busiest_day,
+        "featured_detection_id": featured_detection_id,
+    }
+
+
 async def get_seasonal_activity(db_path: str) -> list[dict[str, Any]]:
     """Unique species count and total detections per ISO week for the last 52 weeks.
 

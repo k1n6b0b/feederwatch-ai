@@ -6,6 +6,7 @@
 import type {
   DailySummary,
   Detection,
+  MonthlyRecap,
   MqttRingEntry,
   PhenologyYear,
   Species,
@@ -158,6 +159,15 @@ export const events = {
 export const admin = {
   importWamf: (filename: string, data: string) =>
     post<{ imported: number; skipped: number }>('/admin/import-wamf', { filename, data }),
+}
+
+// ---------------------------------------------------------------------------
+// Recap
+// ---------------------------------------------------------------------------
+
+export const recap = {
+  monthly: (year: number, month: number) =>
+    get<MonthlyRecap>(`/recap/monthly?year=${year}&month=${month}`),
 }
 
 // ---------------------------------------------------------------------------

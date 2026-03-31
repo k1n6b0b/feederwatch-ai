@@ -126,6 +126,39 @@ export interface StatusChipInfo {
   label: string
 }
 
+export interface RecapPeriod {
+  year: number
+  month: number
+  total_days: number
+  days_with_detections: number
+}
+
+export interface RecapSpecies {
+  scientific_name: string
+  common_name: string
+  count: number
+  best_detection_id: number | null
+}
+
+export interface RecapNewSpecies {
+  scientific_name: string
+  common_name: string
+  first_seen: string
+  best_detection_id: number | null
+}
+
+export interface MonthlyRecap {
+  period: RecapPeriod
+  total_visits: number
+  unique_species: number
+  top_species: RecapSpecies | null
+  rarest_species: RecapSpecies | null
+  new_species: RecapNewSpecies[]
+  peak_hour: number | null
+  busiest_day: { date: string; count: number } | null
+  featured_detection_id: number | null
+}
+
 export interface MqttRingEntry {
   timestamp: string
   camera: string

@@ -116,3 +116,33 @@ describe('fetch wrapper', () => {
     await expect(detections.daily('2025-01-01')).rejects.toThrow('API error 404')
   })
 })
+
+// ---------------------------------------------------------------------------
+// recap.monthly URL builder
+// ---------------------------------------------------------------------------
+
+import { recap } from '../../../addon/frontend/src/api/client'
+
+describe('recap.monthly', () => {
+  const originalFetch = global.fetch
+
+  beforeEach(() => {
+    global.fetch = vi.fn()
+  })
+
+  afterEach(() => {
+    global.fetch = originalFetch
+  })
+
+  it('calls the correct URL with year and month', async () => {
+    vi.mocked(global.fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ period: {}, total_visits: 0, unique_species: 0 }),
+    } as Response)
+
+    await recap.monthly(2026, 3).catch(() => {})
+    expect(vi.mocked(global.fetch)).toHaveBeenCalledWith(
+      expect.stringContaining('/recap/monthly?year=2026&month=3')
+    )
+  })
+})

@@ -23,6 +23,7 @@ from src.db import (
     get_db_size_bytes,
     get_detection_by_id,
     get_display_names,
+    get_monthly_recap,
     get_recent_detections,
     get_species_detail,
     get_total_detection_count,
@@ -568,3 +569,136 @@ async def test_migrate_wamf_overwrites_wrong_common_name(tmp_path):
             "SELECT common_name FROM species WHERE scientific_name = 'Poecile atricapillus'"
         )
     assert row[0]["common_name"] == "Black-capped Chickadee"
+
+
+# ---------------------------------------------------------------------------
+# Monthly recap
+# ---------------------------------------------------------------------------
+
+async def _insert_with_timestamp(db_path: str, evt_id: str, sci: str, common: str,
+                                  detected_at: str, score: float = 0.8,
+                                  snapshot_path: str | None = None) -> int:
+    """Insert a detection with an explicit detected_at timestamp."""
+    import aiosqlite as _aiosqlite
+    await upsert_species(db_path, sci, common)
+    async with _aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            """
+            INSERT INTO detections
+              (frigate_event_id, scientific_name, common_name, score,
+               category_name, camera_name, snapshot_path, detected_at)
+            VALUES (?, ?, ?, ?, 'ai_classified', 'cam', ?, ?)
+            """,
+            (evt_id, sci, common, score, snapshot_path, detected_at),
+        )
+        await db.commit()
+        return cur.lastrowid  # type: ignore[return-value]
+
+
+@pytest.mark.asyncio
+async def test_monthly_recap_empty_month():
+    recap = await get_monthly_recap(DB, 2026, 3)
+    assert recap["total_visits"] == 0
+    assert recap["unique_species"] == 0
+    assert recap["top_species"] is None
+    assert recap["rarest_species"] is None
+    assert recap["new_species"] == []
+    assert recap["peak_hour"] is None
+    assert recap["busiest_day"] is None
+    assert recap["featured_detection_id"] is None
+    assert recap["period"]["year"] == 2026
+    assert recap["period"]["month"] == 3
+    assert recap["period"]["total_days"] == 31
+
+
+@pytest.mark.asyncio
+async def test_monthly_recap_totals():
+    await _insert_with_timestamp(DB, "e1", "Turdus migratorius", "American Robin", "2026-03-05T08:00:00")
+    await _insert_with_timestamp(DB, "e2", "Turdus migratorius", "American Robin", "2026-03-06T09:00:00")
+    await _insert_with_timestamp(DB, "e3", "Poecile atricapillus", "Black-capped Chickadee", "2026-03-07T10:00:00")
+    recap = await get_monthly_recap(DB, 2026, 3)
+    assert recap["total_visits"] == 3
+    assert recap["unique_species"] == 2
+    assert recap["period"]["days_with_detections"] == 3
+
+
+@pytest.mark.asyncio
+async def test_monthly_recap_top_species():
+    await _insert_with_timestamp(DB, "e1", "Turdus migratorius", "American Robin", "2026-03-01T08:00:00")
+    await _insert_with_timestamp(DB, "e2", "Turdus migratorius", "American Robin", "2026-03-02T09:00:00")
+    await _insert_with_timestamp(DB, "e3", "Poecile atricapillus", "Black-capped Chickadee", "2026-03-03T10:00:00")
+    recap = await get_monthly_recap(DB, 2026, 3)
+    assert recap["top_species"] is not None
+    assert recap["top_species"]["scientific_name"] == "Turdus migratorius"
+    assert recap["top_species"]["count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_monthly_recap_rarest_species():
+    await _insert_with_timestamp(DB, "e1", "Turdus migratorius", "American Robin", "2026-03-01T08:00:00")
+    await _insert_with_timestamp(DB, "e2", "Turdus migratorius", "American Robin", "2026-03-02T09:00:00")
+    await _insert_with_timestamp(DB, "e3", "Poecile atricapillus", "Black-capped Chickadee", "2026-03-03T10:00:00")
+    recap = await get_monthly_recap(DB, 2026, 3)
+    assert recap["rarest_species"] is not None
+    assert recap["rarest_species"]["scientific_name"] == "Poecile atricapillus"
+    assert recap["rarest_species"]["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_monthly_recap_new_species():
+    # First-ever detection of Robin is IN March 2026 — should appear in new_species
+    await _insert_with_timestamp(DB, "e1", "Turdus migratorius", "American Robin", "2026-03-05T08:00:00")
+    # Chickadee was seen in February — should NOT appear in new_species for March
+    await _insert_with_timestamp(DB, "e2", "Poecile atricapillus", "Black-capped Chickadee", "2026-02-01T08:00:00")
+    await _insert_with_timestamp(DB, "e3", "Poecile atricapillus", "Black-capped Chickadee", "2026-03-10T08:00:00")
+    recap = await get_monthly_recap(DB, 2026, 3)
+    new_names = [s["scientific_name"] for s in recap["new_species"]]
+    assert "Turdus migratorius" in new_names
+    assert "Poecile atricapillus" not in new_names
+
+
+@pytest.mark.asyncio
+async def test_monthly_recap_new_species_excludes_prior():
+    # Species seen before the month must not appear as new this month
+    await _insert_with_timestamp(DB, "e1", "Turdus migratorius", "American Robin", "2025-12-25T08:00:00")
+    await _insert_with_timestamp(DB, "e2", "Turdus migratorius", "American Robin", "2026-03-10T08:00:00")
+    recap = await get_monthly_recap(DB, 2026, 3)
+    assert recap["new_species"] == []
+
+
+@pytest.mark.asyncio
+async def test_monthly_recap_peak_hour():
+    # 3 detections at 09:xx, 1 at 14:xx
+    for i, h in enumerate(["09", "09", "09", "14"]):
+        await _insert_with_timestamp(DB, f"e{i}", "Turdus migratorius", "American Robin",
+                                     f"2026-03-05T{h}:00:00")
+    recap = await get_monthly_recap(DB, 2026, 3)
+    assert recap["peak_hour"] == 9
+
+
+@pytest.mark.asyncio
+async def test_monthly_recap_busiest_day():
+    # March 7 has 3 detections, March 8 has 1
+    for i in range(3):
+        await _insert_with_timestamp(DB, f"e{i}", "Turdus migratorius", "American Robin",
+                                     f"2026-03-07T{8 + i:02d}:00:00")
+    await _insert_with_timestamp(DB, "e3", "Turdus migratorius", "American Robin", "2026-03-08T08:00:00")
+    recap = await get_monthly_recap(DB, 2026, 3)
+    assert recap["busiest_day"] is not None
+    assert recap["busiest_day"]["date"] == "2026-03-07"
+    assert recap["busiest_day"]["count"] == 3
+
+
+@pytest.mark.asyncio
+async def test_monthly_recap_featured_prefers_snapshot():
+    # Detection with snapshot but lower score should beat higher score without snapshot
+    id_with_snap = await _insert_with_timestamp(
+        DB, "e1", "Turdus migratorius", "American Robin",
+        "2026-03-05T08:00:00", score=0.7, snapshot_path="/data/snapshots/e1.jpg"
+    )
+    _id_no_snap = await _insert_with_timestamp(
+        DB, "e2", "Turdus migratorius", "American Robin",
+        "2026-03-05T09:00:00", score=0.99, snapshot_path=None
+    )
+    recap = await get_monthly_recap(DB, 2026, 3)
+    assert recap["featured_detection_id"] == id_with_snap

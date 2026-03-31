@@ -78,22 +78,31 @@ export default function Daily() {
             ▶
           </button>
         </div>
-        {hasDetections ? (
-          <a
-            href={exportApi.csvUrl(date)}
-            download={`feederwatch_${date}.csv`}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate(`/recap/${date.slice(0, 4)}/${parseInt(date.slice(5, 7))}`)}
             className="btn-ghost text-sm"
+            title="View monthly recap"
           >
-            Export CSV
-          </a>
-        ) : (
-          <span
-            className="btn-ghost text-sm opacity-40 cursor-not-allowed select-none"
-            title="No detections to export"
-          >
-            Export CSV
-          </span>
-        )}
+            Month Recap
+          </button>
+          {hasDetections ? (
+            <a
+              href={exportApi.csvUrl(date)}
+              download={`feederwatch_${date}.csv`}
+              className="btn-ghost text-sm"
+            >
+              Export CSV
+            </a>
+          ) : (
+            <span
+              className="btn-ghost text-sm opacity-40 cursor-not-allowed select-none"
+              title="No detections to export"
+            >
+              Export CSV
+            </span>
+          )}
+        </div>
       </div>
 
       {isLoading ? (
