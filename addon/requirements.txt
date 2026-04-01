@@ -1,7 +1,7 @@
 # FeederWatch AI Add-on — Python dependencies
 # Pinned for reproducibility. Audited with trivy before each release.
 
-aiohttp==3.13.3      # bumped from 3.9.5: fixes HIGH CVE-2025-69223 (zip bomb) + request smuggling
+aiohttp==3.13.4      # bumped from 3.9.5: fixes HIGH CVE-2025-69223 (zip bomb) + request smuggling
 aiomqtt==2.1.0
 aiosqlite==0.20.0
 pydantic==2.7.1
